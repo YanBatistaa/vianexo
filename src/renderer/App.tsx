@@ -103,6 +103,41 @@ function matchesSearch(value: unknown, search: string) {
   return JSON.stringify(value ?? "").toLowerCase().includes(search.trim().toLowerCase());
 }
 
+function csvCell(value: unknown) {
+  return `"${String(value ?? "").replace(/"/g, "\"\"")}"`;
+}
+
+function downloadCsv(fileName: string, rows: string[][]) {
+  const csv = rows.map((row) => row.map(csvCell).join(";")).join("\r\n");
+  const blob = new Blob([`\uFEFF${csv}`], { type: "text/csv;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement("a");
+  anchor.href = url;
+  anchor.download = `${fileName.replace(/[^\w.-]+/g, "-").toLowerCase()}.csv`;
+  anchor.click();
+  URL.revokeObjectURL(url);
+}
+
+function routeSearchPayload(route: any) {
+  return {
+    name: route.name,
+    client: route.client?.name,
+    status: route.status,
+    date: route.date,
+    vehicles: route.vehicles?.map((routeVehicle: any) => ({
+      label: routeVehicle.vehicle?.label,
+      plate: routeVehicle.vehicle?.plate,
+      driver: routeVehicle.driver?.name,
+      passengers: routeVehicle.passengers?.map((passenger: any) => ({
+        name: passenger.employee?.name,
+        client: passenger.employee?.client?.name,
+        address: passenger.employee?.address,
+        destination: passenger.employee?.destination
+      }))
+    }))
+  };
+}
+
 function SetupScreen({ onDone }: { onDone: () => void }) {
   const [form, setForm] = useState({ name: "", email: "", password: "" });
   const [error, setError] = useState("");
@@ -782,6 +817,7 @@ function RoutesModule({ clients, employees, vehicles, drivers, routes, refresh, 
   const selectedEmployeeIds = useMemo(() => new Set(cards.flatMap((card) => card.employeeIds)), [cards]);
   const availableEmployees = filteredEmployees.filter((employee: any) => !selectedEmployeeIds.has(employee.id));
   const activeEmployee = employees.find((employee: any) => employee.id === activeEmployeeId);
+  const searchedRoutes = routes.filter((route: any) => matchesSearch(routeSearchPayload(route), historySearch));
 
   function addVehicleCard(vehicle: any) {
     const count = cards.filter((card) => card.vehicleId === vehicle.id).length + 1;
@@ -831,20 +867,63 @@ function RoutesModule({ clients, employees, vehicles, drivers, routes, refresh, 
     window.print();
   }
 
-  function loadRoute(route: any) {
-    const routeVehicle = route.vehicles?.[0];
-    if (!routeVehicle) return;
-    setDate(new Date(route.date).toISOString().slice(0, 10));
-    setClientId(route.client?.name === "Rotas multiclientes" ? "" : route.clientId);
-    setCards([{
-      instanceId: `${route.id}-${Date.now()}`,
+  function exportCardsCsv(exportCards = cards, name = `rotas-${date}`, exportDate = date) {
+    if (exportCards.length === 0) return;
+    const rows = [
+      ["Data", "Rota", "Veiculo", "Motorista", "Ordem", "Funcionario", "Cliente", "Bairro", "Destino", "Telefone"]
+    ];
+    exportCards.forEach((card) => {
+      const vehicle = vehicles.find((item: any) => item.id === card.vehicleId);
+      const driver = drivers.find((item: any) => item.id === card.driverId);
+      card.employeeIds.forEach((employeeId, index) => {
+        const employee = employees.find((item: any) => item.id === employeeId);
+        rows.push([
+          exportDate,
+          card.name,
+          vehicle?.label ?? "",
+          driver?.name ?? "",
+          String(index + 1),
+          employee?.name ?? "",
+          employee?.client?.name ?? "",
+          employee?.address ?? "",
+          employee?.destination ?? "",
+          employee?.phone ?? ""
+        ]);
+      });
+      if (card.employeeIds.length === 0) {
+        rows.push([exportDate, card.name, vehicle?.label ?? "", driver?.name ?? "", "", "", "", "", "", ""]);
+      }
+    });
+    downloadCsv(name, rows);
+  }
+
+  function exportSavedRoute(route: any) {
+    const exportDate = new Date(route.date).toISOString().slice(0, 10);
+    const exportCards = route.vehicles?.map((routeVehicle: any, index: number) => ({
+      instanceId: `${route.id}-${routeVehicle.id}`,
       routeId: route.id,
       vehicleId: routeVehicle.vehicleId,
-      name: route.name,
+      name: routeVehicle.groupName || route.name || `Rota ${index + 1}`,
       driverId: routeVehicle.driverId ?? "",
       employeeIds: routeVehicle.passengers?.map((item: any) => item.employeeId) ?? [],
       status: route.status
-    }]);
+    })) ?? [];
+    exportCardsCsv(exportCards, route.name || `rota-${exportDate}`, exportDate);
+  }
+
+  function loadRoute(route: any) {
+    if (!route.vehicles?.length) return;
+    setDate(new Date(route.date).toISOString().slice(0, 10));
+    setClientId(route.client?.name === "Rotas multiclientes" ? "" : route.clientId);
+    setCards(route.vehicles.map((routeVehicle: any, index: number) => ({
+      instanceId: `${route.id}-${routeVehicle.id}-${Date.now()}`,
+      routeId: index === 0 ? route.id : undefined,
+      vehicleId: routeVehicle.vehicleId,
+      name: routeVehicle.groupName || route.name,
+      driverId: routeVehicle.driverId ?? "",
+      employeeIds: routeVehicle.passengers?.map((item: any) => item.employeeId) ?? [],
+      status: route.status
+    })));
   }
 
   function handleDragStart(event: DragStartEvent) {
@@ -923,6 +1002,9 @@ function RoutesModule({ clients, employees, vehicles, drivers, routes, refresh, 
           <button className="secondary-button" disabled={cards.length === 0} onClick={printRoutes}>
             <FileSpreadsheet size={17} /> Imprimir lista
           </button>
+          <button className="secondary-button" disabled={cards.length === 0} onClick={() => exportCardsCsv()}>
+            <Download size={17} /> Exportar CSV
+          </button>
         </div>
         <DndContext sensors={sensors} onDragStart={handleDragStart} onDragEnd={handleDragEnd}>
           <div className="route-groups">
@@ -976,14 +1058,18 @@ function RoutesModule({ clients, employees, vehicles, drivers, routes, refresh, 
         <h3>Rotas salvas</h3>
         <SearchBar value={historySearch} onChange={setHistorySearch} placeholder="Filtrar rotas salvas" />
         <DataTable
-          columns={["Nome", "Cliente", "Data", "Status", "Veiculo", "Acoes"]}
-          rows={routes.filter((route: any) => matchesSearch(route, historySearch)).map((route: any) => [
+          columns={["Nome", "Cliente", "Data", "Status", "Veiculo", "Atualizado", "Acoes"]}
+          rows={searchedRoutes.map((route: any) => [
             route.name,
             route.client?.name ?? "-",
             new Date(route.date).toLocaleDateString("pt-BR"),
             route.status,
-            route.vehicles?.[0]?.vehicle?.label ?? "-",
-            can(user, "routes", "edit") && <button key={route.id} className="icon-button" title="Editar rota" onClick={() => loadRoute(route)}><Edit3 size={16} /></button>
+            route.vehicles?.map((item: any) => item.vehicle?.label).filter(Boolean).join(", ") || "-",
+            new Date(route.updatedAt ?? route.createdAt).toLocaleString("pt-BR"),
+            <div className="row-actions" key={route.id}>
+              {can(user, "routes", "edit") && <button className="icon-button" title="Editar rota" onClick={() => loadRoute(route)}><Edit3 size={16} /></button>}
+              <button className="icon-button" title="Exportar rota" onClick={() => exportSavedRoute(route)}><Download size={16} /></button>
+            </div>
           ])}
         />
       </section>

@@ -302,8 +302,15 @@ export async function listRoutes() {
     orderBy: { date: "desc" },
     include: {
       client: true,
-      vehicles: { include: { vehicle: true, driver: true, passengers: { include: { employee: true } } } },
-      passengers: { include: { employee: true } }
+      vehicles: {
+        orderBy: { sequence: "asc" },
+        include: {
+          vehicle: true,
+          driver: true,
+          passengers: { orderBy: { order: "asc" }, include: { employee: { include: { client: true } } } }
+        }
+      },
+      passengers: { orderBy: { order: "asc" }, include: { employee: { include: { client: true } } } }
     }
   });
 }
@@ -345,7 +352,14 @@ export async function saveRoute(input: any) {
       where: { id: route.id },
       include: {
         client: true,
-        vehicles: { include: { vehicle: true, driver: true, passengers: { include: { employee: true } } } }
+        vehicles: {
+          orderBy: { sequence: "asc" },
+          include: {
+            vehicle: true,
+            driver: true,
+            passengers: { orderBy: { order: "asc" }, include: { employee: { include: { client: true } } } }
+          }
+        }
       }
     });
   });
