@@ -1152,6 +1152,7 @@ function SettingsModule({ user, showUpdate, onLogout, refresh, notify }: any) {
   const [updateMessage, setUpdateMessage] = useState("");
   const [checking, setChecking] = useState(false);
   const [restoring, setRestoring] = useState(false);
+  const [confirmRestore, setConfirmRestore] = useState(false);
   const [backupSettings, setBackupSettings] = useState<any>(null);
   const [auditLogs, setAuditLogs] = useState<any[]>([]);
 
@@ -1182,9 +1183,6 @@ function SettingsModule({ user, showUpdate, onLogout, refresh, notify }: any) {
   }
 
   async function restoreBackup() {
-    if (!window.confirm("Restaurar um backup vai substituir o banco local atual. Uma copia de seguranca sera criada antes da troca. Deseja continuar?")) {
-      return;
-    }
     setRestoring(true);
     try {
       const result = await api.restoreBackup();
@@ -1242,7 +1240,7 @@ function SettingsModule({ user, showUpdate, onLogout, refresh, notify }: any) {
             <DatabaseBackup size={17} /> Escolher pasta
           </button>
           <p className="muted-copy">Restaure um arquivo `.db` gerado pelo ViaNexo. O app valida o arquivo e cria uma copia do banco atual antes de substituir os dados.</p>
-          <button className="secondary-button danger" onClick={restoreBackup} disabled={restoring || !can(user, "settings", "edit")}>
+          <button className="secondary-button danger" onClick={() => setConfirmRestore(true)} disabled={restoring || !can(user, "settings", "edit")}>
             <DatabaseBackup size={17} /> {restoring ? "Restaurando..." : "Restaurar backup"}
           </button>
         </div>
@@ -1260,7 +1258,40 @@ function SettingsModule({ user, showUpdate, onLogout, refresh, notify }: any) {
           )}
         </div>
       </section>
+      {confirmRestore && (
+        <ConfirmDialog
+          title="Restaurar backup?"
+          message="Essa acao substitui o banco local atual. Antes da troca, o ViaNexo cria uma copia de seguranca automatica."
+          confirmLabel="Restaurar"
+          onCancel={() => setConfirmRestore(false)}
+          onConfirm={async () => {
+            setConfirmRestore(false);
+            await restoreBackup();
+          }}
+        />
+      )}
     </>
+  );
+}
+
+function ConfirmDialog({ title, message, confirmLabel = "Confirmar", onCancel, onConfirm }: {
+  title: string;
+  message: string;
+  confirmLabel?: string;
+  onCancel: () => void;
+  onConfirm: () => void | Promise<void>;
+}) {
+  return (
+    <div className="confirm-overlay" role="dialog" aria-modal="true" aria-labelledby="confirm-title">
+      <section className="confirm-dialog">
+        <h2 id="confirm-title">{title}</h2>
+        <p>{message}</p>
+        <div className="confirm-actions">
+          <button className="secondary-button" type="button" onClick={onCancel}>Cancelar</button>
+          <button className="primary-button" type="button" onClick={onConfirm}>{confirmLabel}</button>
+        </div>
+      </section>
+    </div>
   );
 }
 
@@ -1327,14 +1358,23 @@ function SearchBar({ value, onChange, placeholder }: { value: string; onChange: 
 }
 
 function RowActions({ onEdit, onDelete, canEdit = true, canDelete = true }: { onEdit: () => void; onDelete: () => void; canEdit?: boolean; canDelete?: boolean }) {
+  const [confirmDelete, setConfirmDelete] = useState(false);
   return (
     <div className="row-actions">
       {canEdit && <button className="icon-button" title="Editar" onClick={onEdit}><Edit3 size={16} /></button>}
-      {canDelete && <button className="icon-button" title="Excluir" onClick={() => {
-        if (window.confirm("Tem certeza que deseja excluir este registro?")) {
-          onDelete();
-        }
-      }}><Trash2 size={16} /></button>}
+      {canDelete && <button className="icon-button" title="Excluir" onClick={() => setConfirmDelete(true)}><Trash2 size={16} /></button>}
+      {confirmDelete && (
+        <ConfirmDialog
+          title="Excluir registro?"
+          message="Essa acao remove o registro selecionado e nao pode ser desfeita pelo app."
+          confirmLabel="Excluir"
+          onCancel={() => setConfirmDelete(false)}
+          onConfirm={async () => {
+            setConfirmDelete(false);
+            await onDelete();
+          }}
+        />
+      )}
     </div>
   );
 }
