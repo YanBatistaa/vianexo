@@ -1,6 +1,6 @@
 {
   "name": "vianexo",
-  "version": "0.3.1",
+  "version": "0.3.2",
   "private": true,
   "description": "ViaNexo: aplicacao desktop para gestao operacional de fretamento, frota e roteiros.",
   "author": "ViaNexo",
@@ -21,6 +21,7 @@
     "test:smoke": "tsx scripts/smoke-test.ts",
     "test:permissions": "tsx scripts/permissions-test.ts",
     "test:contracts": "tsx scripts/ipc-contract-test.ts",
+    "test:migrations": "tsx scripts/migration-test.ts",
     "release:changelog": "tsx scripts/generate-changelog.ts"
   },
   "dependencies": {

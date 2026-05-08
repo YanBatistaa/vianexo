@@ -28,11 +28,36 @@ export function getPrisma() {
   return prisma;
 }
 
-function getMigrationPath() {
+function getMigrationsDir() {
   if (app.isPackaged) {
-    return path.join(process.resourcesPath, "prisma", "migrations", "202605080001_init", "migration.sql");
+    return path.join(process.resourcesPath, "prisma", "migrations");
   }
-  return path.join(process.cwd(), "prisma", "migrations", "202605080001_init", "migration.sql");
+  return path.join(process.cwd(), "prisma", "migrations");
+}
+
+function isBenignMigrationError(error: unknown) {
+  const message = error instanceof Error ? error.message.toLowerCase() : String(error).toLowerCase();
+  return [
+    "already exists",
+    "duplicate column name"
+  ].some((item) => message.includes(item));
+}
+
+function splitSqlStatements(sql: string) {
+  return sql.split(";").map((statement) => statement.trim()).filter(Boolean);
+}
+
+async function runMigrationStatements(client: PrismaClient, filePath: string) {
+  const migration = fs.readFileSync(filePath, "utf8");
+  for (const statement of splitSqlStatements(migration)) {
+    try {
+      await client.$executeRawUnsafe(statement);
+    } catch (error) {
+      if (!isBenignMigrationError(error)) {
+        throw error;
+      }
+    }
+  }
 }
 
 export async function ensureDatabaseSchema() {
@@ -41,16 +66,18 @@ export async function ensureDatabaseSchema() {
   }
 
   const client = getPrisma();
-  const tables = await client.$queryRawUnsafe<Array<{ name: string }>>(
-    "SELECT name FROM sqlite_master WHERE type='table' AND name='User'"
-  );
+  const migrationsDir = getMigrationsDir();
+  if (!fs.existsSync(migrationsDir)) {
+    throw new Error(`Pasta de migrations nao encontrada: ${migrationsDir}`);
+  }
 
-  if (tables.length === 0) {
-    const migration = fs.readFileSync(getMigrationPath(), "utf8");
-    const statements = migration.split(";").map((statement) => statement.trim()).filter(Boolean);
-    for (const statement of statements) {
-      await client.$executeRawUnsafe(statement);
-    }
+  const migrationFiles = fs.readdirSync(migrationsDir)
+    .sort()
+    .map((folder) => path.join(migrationsDir, folder, "migration.sql"))
+    .filter((filePath) => fs.existsSync(filePath));
+
+  for (const filePath of migrationFiles) {
+    await runMigrationStatements(client, filePath);
   }
 
   schemaReady = true;

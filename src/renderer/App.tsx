@@ -1614,22 +1614,45 @@ function DataTable({ columns, rows }: { columns: string[]; rows: React.ReactNode
 function App() {
   const [needsSetup, setNeedsSetup] = useState<boolean | null>(null);
   const [user, setUser] = useState<SessionUser | null>(null);
+  const [bootError, setBootError] = useState("");
 
   useEffect(() => {
-    api.bootstrap().then(async (state) => {
-      setNeedsSetup(state.needsSetup);
-      if (!state.needsSetup) {
-        const token = localStorage.getItem(sessionStorageKey);
-        if (token) {
-          try {
-            setUser(await api.restoreSession(token));
-          } catch {
-            localStorage.removeItem(sessionStorageKey);
+    try {
+      if (!api) {
+        throw new Error("Preload nao carregou a API do ViaNexo.");
+      }
+      api.bootstrap().then(async (state) => {
+        setNeedsSetup(state.needsSetup);
+        if (!state.needsSetup) {
+          const token = localStorage.getItem(sessionStorageKey);
+          if (token) {
+            try {
+              setUser(await api.restoreSession(token));
+            } catch {
+              localStorage.removeItem(sessionStorageKey);
+            }
           }
         }
-      }
-    });
+      }).catch((error) => {
+        setBootError(error instanceof Error ? error.message : "Nao foi possivel iniciar o ViaNexo.");
+      });
+    } catch (error) {
+      setBootError(error instanceof Error ? error.message : "Nao foi possivel iniciar o ViaNexo.");
+    }
   }, []);
+
+  if (bootError) {
+    return (
+      <main className="setup-shell">
+        <section className="setup-panel">
+          <BrandMark />
+          <h1>{appName}</h1>
+          <p className="error-line">Erro ao iniciar: {bootError}</p>
+          <p className="muted-copy">Feche e abra o app novamente. Se persistir, envie o arquivo de log em AppData/Roaming/ViaNexo/logs/main.log.</p>
+        </section>
+      </main>
+    );
+  }
 
   if (needsSetup === null) {
     return <div className="boot-screen">Carregando {appName}...</div>;

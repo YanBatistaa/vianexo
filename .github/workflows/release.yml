@@ -48,6 +48,9 @@ jobs:
       - name: Contract test
         run: npm run test:contracts
 
+      - name: Migration test
+        run: npm run test:migrations
+
       - name: Generate changelog
         shell: pwsh
         run: |

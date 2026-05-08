@@ -56,6 +56,7 @@ npm.cmd run lint
 npm.cmd run test:smoke
 npm.cmd run test:permissions
 npm.cmd run test:contracts
+npm.cmd run test:migrations
 npm.cmd run build
 ```
 
