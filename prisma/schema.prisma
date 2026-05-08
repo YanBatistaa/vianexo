@@ -82,6 +82,8 @@ model Client {
   contact   String?
   phone     String?
   email     String?
+  contractNumber String?
+  monthlyValue Float?
   notes     String?
   employees Employee[]
   imports   ImportJob[]

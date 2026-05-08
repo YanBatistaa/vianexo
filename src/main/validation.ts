@@ -18,6 +18,8 @@ export const clientSchema = z.object({
   contact: z.string().optional(),
   phone: z.string().optional(),
   email: z.string().email().optional().or(z.literal("")),
+  contractNumber: z.string().optional(),
+  monthlyValue: z.coerce.number().nonnegative().optional().or(z.literal("")),
   notes: z.string().optional()
 });
 

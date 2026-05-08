@@ -42,6 +42,8 @@ export type ClientInput = {
   contact?: string;
   phone?: string;
   email?: string;
+  contractNumber?: string;
+  monthlyValue?: number;
   notes?: string;
 };
 

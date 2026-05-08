@@ -227,6 +227,8 @@ export async function saveClient(input: any) {
     contact: input.contact,
     phone: input.phone,
     email: input.email,
+    contractNumber: input.contractNumber,
+    monthlyValue: input.monthlyValue === "" ? undefined : input.monthlyValue,
     notes: input.notes
   });
   return input.id

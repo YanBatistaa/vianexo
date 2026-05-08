@@ -383,11 +383,16 @@ th {
 }
 
 .toolbar,
-.inline-action {
+.inline-action,
+.report-toolbar {
   display: flex;
   gap: 12px;
   align-items: center;
   margin-bottom: 14px;
+}
+
+.report-toolbar {
+  flex-wrap: wrap;
 }
 
 .search-bar {

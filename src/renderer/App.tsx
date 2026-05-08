@@ -13,6 +13,7 @@ import {
   FileSpreadsheet,
   Filter,
   GripVertical,
+  BarChart3,
   HelpCircle,
   LogOut,
   MapPinned,
@@ -54,13 +55,13 @@ import { useAsyncData } from "./hooks";
 import { downloadCsv, matchesSearch, routeSearchPayload } from "./utils";
 import "./styles/app.css";
 
-type ModuleKey = "dashboard" | "clients" | "employees" | "vehicles" | "drivers" | "imports" | "routes" | "users" | "settings";
+type ModuleKey = "dashboard" | "clients" | "employees" | "vehicles" | "drivers" | "imports" | "routes" | "reports" | "users" | "settings";
 
 const api = window.sistemaVans;
 const appName = "ViaNexo";
 const sessionStorageKey = "vianexo.sessionToken";
 
-const emptyClient = { id: "", name: "", document: "", contact: "", phone: "", email: "", notes: "" };
+const emptyClient = { id: "", name: "", document: "", contact: "", phone: "", email: "", contractNumber: "", monthlyValue: "", notes: "" };
 const emptyDriver = { id: "", name: "", phone: "", document: "", notes: "" };
 const emptyVehicle = { id: "", label: "", plate: "", capacity: 15, status: "ACTIVE", notes: "", driverName: "" };
 const emptyUser = { id: "", name: "", email: "", password: "", status: "ACTIVE", permissions: createViewOnlyPermissionMatrix() as PermissionMatrix };
@@ -74,6 +75,7 @@ const navItems: Array<{ key: ModuleKey; label: string; icon: React.ElementType }
   { key: "drivers", label: "Motoristas", icon: Shield },
   { key: "imports", label: "Importacoes", icon: FileSpreadsheet },
   { key: "routes", label: "Rotas", icon: MapPinned },
+  { key: "reports", label: "Relatorios", icon: BarChart3 },
   { key: "users", label: "Usuarios", icon: Wrench },
   { key: "settings", label: "Configuracoes", icon: Settings }
 ];
@@ -169,7 +171,7 @@ function Shell({ user, onLogout }: { user: SessionUser; onLogout: () => void | P
   const users = useAsyncData(() => api.listUsers(), [refreshKey], []);
   const routes = useAsyncData(() => api.listRoutes(), [refreshKey], []);
 
-  const visibleNavItems = navItems.filter((item) => unrestrictedModules.has(item.key) || can(user, item.key, "view"));
+  const visibleNavItems = navItems.filter((item) => unrestrictedModules.has(item.key) || can(user, item.key === "reports" ? "routes" : item.key, "view"));
 
   const context = {
     user,
@@ -245,6 +247,7 @@ function Shell({ user, onLogout }: { user: SessionUser; onLogout: () => void | P
         {active === "drivers" && <DriversModule {...context} />}
         {active === "imports" && <ImportsModule {...context} />}
         {active === "routes" && <RoutesModule {...context} />}
+        {active === "reports" && <ReportsModule {...context} />}
         {active === "users" && <UsersModule {...context} />}
         {active === "settings" && <SettingsModule {...context} />}
       </main>
@@ -330,7 +333,7 @@ function Dashboard(context: any) {
   );
 }
 
-function Metric({ label, value, tone }: { label: string; value: number; tone: string }) {
+function Metric({ label, value, tone }: { label: string; value: number | string; tone: string }) {
   return (
     <article className={`metric-card ${tone}`}>
       <small>{label}</small>
@@ -364,7 +367,7 @@ function ClientsModule({ clients, refresh, user, notify }: any) {
     <>
       <PageHeader eyebrow="Cadastro" title="Clientes contratantes" help="Cadastre empresas contratantes. A edicao reutiliza o mesmo formulario apos clicar no icone de lapis." />
       {can(user, "clients", editing ? "edit" : "create") && <EditorPanel title={editing ? "Editar cliente" : "Novo cliente"} onCancel={editing ? () => setForm(emptyClient) : undefined} onSubmit={async () => {
-        await api.saveClient(form);
+        await api.saveClient({ ...form, monthlyValue: form.monthlyValue ? Number(form.monthlyValue) : undefined });
         setForm(emptyClient);
         refresh();
         notify(editing ? "Cliente atualizado." : "Cliente cadastrado.");
@@ -373,19 +376,111 @@ function ClientsModule({ clients, refresh, user, notify }: any) {
         <Input label="Documento" value={form.document} onChange={(document) => setForm({ ...form, document })} required={false} />
         <Input label="Contato" value={form.contact} onChange={(contact) => setForm({ ...form, contact })} required={false} />
         <Input label="Telefone" value={form.phone} onChange={(phone) => setForm({ ...form, phone })} required={false} />
+        <Input label="Contrato" value={form.contractNumber} onChange={(contractNumber) => setForm({ ...form, contractNumber })} required={false} />
+        <Input label="Valor mensal" type="number" value={String(form.monthlyValue)} onChange={(monthlyValue) => setForm({ ...form, monthlyValue })} required={false} />
       </EditorPanel>}
       <SearchBar value={search} onChange={setSearch} placeholder="Filtrar por empresa, contato ou telefone" />
       <DataSection
-        columns={["Empresa", "Contato", "Telefone", "Funcionarios", "Rotas", "Acoes"]}
+        columns={["Empresa", "Contrato", "Valor mensal", "Contato", "Telefone", "Funcionarios", "Rotas", "Acoes"]}
         rows={rows.map((client: any) => [
           client.name,
+          client.contractNumber ?? "-",
+          client.monthlyValue ? Number(client.monthlyValue).toLocaleString("pt-BR", { style: "currency", currency: "BRL" }) : "-",
           client.contact ?? "-",
           client.phone ?? "-",
           client._count?.employees ?? 0,
           client._count?.routes ?? 0,
-          <RowActions key={client.id} canEdit={can(user, "clients", "edit")} canDelete={can(user, "clients", "delete")} onEdit={() => setForm({ ...emptyClient, ...client })} onDelete={async () => { await api.deleteClient(client.id); refresh(); notify("Cliente excluido."); }} />
+          <RowActions key={client.id} canEdit={can(user, "clients", "edit")} canDelete={can(user, "clients", "delete")} onEdit={() => setForm({ ...emptyClient, ...client, monthlyValue: client.monthlyValue ? String(client.monthlyValue) : "" })} onDelete={async () => { await api.deleteClient(client.id); refresh(); notify("Cliente excluido."); }} />
         ])}
       />
+    </>
+  );
+}
+
+function ReportsModule({ clients, routes, user }: any) {
+  const [clientId, setClientId] = useState("");
+  const [month, setMonth] = useState(new Date().toISOString().slice(0, 7));
+  const visibleRoutes = routes.filter((route: any) => {
+    const routeMonth = new Date(route.date).toISOString().slice(0, 7);
+    return routeMonth === month && (!clientId || route.clientId === clientId);
+  });
+  const visibleClients = clientId ? clients.filter((client: any) => client.id === clientId) : clients;
+  const monthlyRevenue = visibleClients.reduce((sum: number, client: any) => sum + Number(client.monthlyValue ?? 0), 0);
+  const passengerCount = visibleRoutes.reduce((sum: number, route: any) => (
+    sum + (route.vehicles ?? []).reduce((vehicleSum: number, routeVehicle: any) => vehicleSum + (routeVehicle.passengers?.length ?? 0), 0)
+  ), 0);
+
+  function exportMonthlyCsv() {
+    const rows = [
+      ["Mes", "Cliente", "Contrato", "Valor mensal", "Rotas", "Passageiros"]
+    ];
+    visibleClients.forEach((client: any) => {
+      const clientRoutes = visibleRoutes.filter((route: any) => route.clientId === client.id);
+      const clientPassengers = clientRoutes.reduce((sum: number, route: any) => (
+        sum + (route.vehicles ?? []).reduce((vehicleSum: number, routeVehicle: any) => vehicleSum + (routeVehicle.passengers?.length ?? 0), 0)
+      ), 0);
+      rows.push([
+        month,
+        client.name,
+        client.contractNumber ?? "",
+        String(client.monthlyValue ?? ""),
+        String(clientRoutes.length),
+        String(clientPassengers)
+      ]);
+    });
+    downloadCsv(`relatorio-mensal-${month}`, rows);
+  }
+
+  return (
+    <>
+      <PageHeader
+        eyebrow="Operacao"
+        title="Relatorios mensais"
+        help="Consolide rotas, passageiros e valor mensal contratado por cliente."
+        action={<button className="secondary-button" disabled={!can(user, "routes", "view")} onClick={exportMonthlyCsv}><Download size={17} /> Exportar CSV</button>}
+      />
+      <section className="report-toolbar">
+        <Input label="Mes" type="month" value={month} onChange={setMonth} />
+        <label>
+          Cliente
+          <select value={clientId} onChange={(event) => setClientId(event.target.value)}>
+            <option value="">Todos</option>
+            {clients.map((client: any) => <option key={client.id} value={client.id}>{client.name}</option>)}
+          </select>
+        </label>
+      </section>
+      <section className="metric-grid">
+        <Metric label="Rotas no mes" value={visibleRoutes.length} tone="ink" />
+        <Metric label="Passageiros" value={passengerCount} tone="green" />
+        <Metric label="Clientes" value={visibleClients.length} tone="amber" />
+        <Metric label="Receita estimada" value={monthlyRevenue.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })} tone="red" />
+      </section>
+      <section className="work-board">
+        <div>
+          <h3>Resumo por cliente</h3>
+          <DataTable
+            columns={["Cliente", "Contrato", "Valor mensal", "Rotas"]}
+            rows={visibleClients.map((client: any) => [
+              client.name,
+              client.contractNumber ?? "-",
+              Number(client.monthlyValue ?? 0).toLocaleString("pt-BR", { style: "currency", currency: "BRL" }),
+              visibleRoutes.filter((route: any) => route.clientId === client.id).length
+            ])}
+          />
+        </div>
+        <div>
+          <h3>Rotas do periodo</h3>
+          <DataTable
+            columns={["Rota", "Cliente", "Data", "Passageiros"]}
+            rows={visibleRoutes.map((route: any) => [
+              route.name,
+              route.client?.name ?? "-",
+              new Date(route.date).toLocaleDateString("pt-BR"),
+              (route.vehicles ?? []).reduce((sum: number, routeVehicle: any) => sum + (routeVehicle.passengers?.length ?? 0), 0)
+            ])}
+          />
+        </div>
+      </section>
     </>
   );
 }
