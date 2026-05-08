@@ -9,11 +9,13 @@ import {
   Download,
   Edit3,
   FileSpreadsheet,
+  Filter,
   HelpCircle,
   LogOut,
   MapPinned,
   Plus,
   Save,
+  Search,
   Settings,
   Shield,
   Trash2,
@@ -42,6 +44,7 @@ const emptyClient = { id: "", name: "", document: "", contact: "", phone: "", em
 const emptyDriver = { id: "", name: "", phone: "", document: "", notes: "" };
 const emptyVehicle = { id: "", label: "", plate: "", capacity: 15, status: "ACTIVE", notes: "", driverName: "" };
 const emptyUser = { id: "", name: "", email: "", password: "", status: "ACTIVE", permissions: createViewOnlyPermissionMatrix() as PermissionMatrix };
+const unrestrictedModules = new Set<ModuleKey>(["dashboard", "settings"]);
 
 const navItems: Array<{ key: ModuleKey; label: string; icon: React.ElementType }> = [
   { key: "dashboard", label: "Painel", icon: Archive },
@@ -68,9 +71,20 @@ function useAsyncData<T>(loader: () => Promise<T>, deps: React.DependencyList, f
     return () => {
       mounted = false;
     };
+    // The caller owns the dependency list so this compact loader can be reused by every module.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, deps);
 
   return { data, setData, loading };
+}
+
+function can(user: SessionUser, module: string, action: string) {
+  if (!user.permissions || user.permissions.length === 0) return true;
+  return user.permissions.some((permission: any) => permission.module === module && permission.action === action && permission.allowed);
+}
+
+function matchesSearch(value: unknown, search: string) {
+  return JSON.stringify(value ?? "").toLowerCase().includes(search.trim().toLowerCase());
 }
 
 function SetupScreen({ onDone }: { onDone: () => void }) {
@@ -147,6 +161,7 @@ function Shell({ user, onLogout }: { user: SessionUser; onLogout: () => void }) 
   const [updateState, setUpdateState] = useState<UpdateCheckResult | null>(null);
   const [updateHidden, setUpdateHidden] = useState(false);
   const [installingUpdate, setInstallingUpdate] = useState(false);
+  const [toast, setToast] = useState<{ tone: "success" | "error"; message: string } | null>(null);
 
   const clients = useAsyncData(() => api.listClients(), [refreshKey], []);
   const employees = useAsyncData(() => api.listEmployees(), [refreshKey], []);
@@ -154,6 +169,8 @@ function Shell({ user, onLogout }: { user: SessionUser; onLogout: () => void }) 
   const drivers = useAsyncData(() => api.listDrivers(), [refreshKey], []);
   const users = useAsyncData(() => api.listUsers(), [refreshKey], []);
   const routes = useAsyncData(() => api.listRoutes(), [refreshKey], []);
+
+  const visibleNavItems = navItems.filter((item) => unrestrictedModules.has(item.key) || can(user, item.key, "view"));
 
   const context = {
     user,
@@ -164,6 +181,10 @@ function Shell({ user, onLogout }: { user: SessionUser; onLogout: () => void }) 
     users: users.data,
     routes: routes.data,
     refresh: () => setRefreshKey((value) => value + 1),
+    notify: (message: string, tone: "success" | "error" = "success") => {
+      setToast({ message, tone });
+      window.setTimeout(() => setToast(null), 3600);
+    },
     showUpdate: (update: UpdateCheckResult) => {
       setUpdateState(update);
       setUpdateHidden(false);
@@ -203,7 +224,7 @@ function Shell({ user, onLogout }: { user: SessionUser; onLogout: () => void }) 
           </div>
         </div>
         <nav>
-          {navItems.map((item) => {
+          {visibleNavItems.map((item) => {
             const Icon = item.icon;
             return (
               <button key={item.key} className={active === item.key ? "active" : ""} onClick={() => setActive(item.key)}>
@@ -236,6 +257,7 @@ function Shell({ user, onLogout }: { user: SessionUser; onLogout: () => void }) 
           onLater={() => setUpdateHidden(true)}
         />
       )}
+      {toast && <div className={`toast ${toast.tone}`}>{toast.message}</div>}
     </div>
   );
 }
@@ -333,76 +355,87 @@ function BackupButton() {
   );
 }
 
-function ClientsModule({ clients, refresh }: any) {
+function ClientsModule({ clients, refresh, user, notify }: any) {
   const [form, setForm] = useState(emptyClient);
+  const [search, setSearch] = useState("");
   const editing = Boolean(form.id);
+  const rows = clients.filter((client: any) => matchesSearch(client, search));
   return (
     <>
       <PageHeader eyebrow="Cadastro" title="Clientes contratantes" help="Cadastre empresas contratantes. A edicao reutiliza o mesmo formulario apos clicar no icone de lapis." />
-      <EditorPanel title={editing ? "Editar cliente" : "Novo cliente"} onCancel={editing ? () => setForm(emptyClient) : undefined} onSubmit={async () => {
+      {can(user, "clients", editing ? "edit" : "create") && <EditorPanel title={editing ? "Editar cliente" : "Novo cliente"} onCancel={editing ? () => setForm(emptyClient) : undefined} onSubmit={async () => {
         await api.saveClient(form);
         setForm(emptyClient);
         refresh();
+        notify(editing ? "Cliente atualizado." : "Cliente cadastrado.");
       }}>
         <Input label="Empresa" value={form.name} onChange={(name) => setForm({ ...form, name })} />
         <Input label="Documento" value={form.document} onChange={(document) => setForm({ ...form, document })} required={false} />
         <Input label="Contato" value={form.contact} onChange={(contact) => setForm({ ...form, contact })} required={false} />
         <Input label="Telefone" value={form.phone} onChange={(phone) => setForm({ ...form, phone })} required={false} />
-      </EditorPanel>
+      </EditorPanel>}
+      <SearchBar value={search} onChange={setSearch} placeholder="Filtrar por empresa, contato ou telefone" />
       <DataSection
         columns={["Empresa", "Contato", "Telefone", "Funcionarios", "Rotas", "Acoes"]}
-        rows={clients.map((client: any) => [
+        rows={rows.map((client: any) => [
           client.name,
           client.contact ?? "-",
           client.phone ?? "-",
           client._count?.employees ?? 0,
           client._count?.routes ?? 0,
-          <RowActions key={client.id} onEdit={() => setForm({ ...emptyClient, ...client })} onDelete={async () => { await api.deleteClient(client.id); refresh(); }} />
+          <RowActions key={client.id} canEdit={can(user, "clients", "edit")} canDelete={can(user, "clients", "delete")} onEdit={() => setForm({ ...emptyClient, ...client })} onDelete={async () => { await api.deleteClient(client.id); refresh(); notify("Cliente excluido."); }} />
         ])}
       />
     </>
   );
 }
 
-function DriversModule({ drivers, refresh }: any) {
+function DriversModule({ drivers, refresh, user, notify }: any) {
   const [form, setForm] = useState(emptyDriver);
+  const [search, setSearch] = useState("");
   const editing = Boolean(form.id);
+  const rows = drivers.filter((driver: any) => matchesSearch(driver, search));
   return (
     <>
       <PageHeader eyebrow="Frota" title="Motoristas" help="Motoristas podem ser cadastrados aqui ou diretamente na tela de Frota ao digitar um nome novo." />
-      <EditorPanel title={editing ? "Editar motorista" : "Novo motorista"} onCancel={editing ? () => setForm(emptyDriver) : undefined} onSubmit={async () => {
+      {can(user, "drivers", editing ? "edit" : "create") && <EditorPanel title={editing ? "Editar motorista" : "Novo motorista"} onCancel={editing ? () => setForm(emptyDriver) : undefined} onSubmit={async () => {
         await api.saveDriver(form);
         setForm(emptyDriver);
         refresh();
+        notify(editing ? "Motorista atualizado." : "Motorista cadastrado.");
       }}>
         <Input label="Nome" value={form.name} onChange={(name) => setForm({ ...form, name })} />
         <Input label="Telefone" value={form.phone} onChange={(phone) => setForm({ ...form, phone })} required={false} />
         <Input label="Documento" value={form.document} onChange={(document) => setForm({ ...form, document })} required={false} />
-      </EditorPanel>
+      </EditorPanel>}
+      <SearchBar value={search} onChange={setSearch} placeholder="Filtrar motoristas" />
       <DataSection
         columns={["Nome", "Telefone", "Documento", "Veiculos", "Acoes"]}
-        rows={drivers.map((driver: any) => [
+        rows={rows.map((driver: any) => [
           driver.name,
           driver.phone ?? "-",
           driver.document ?? "-",
           driver.vehicles?.map((item: any) => item.vehicle.label).join(", ") || "-",
-          <RowActions key={driver.id} onEdit={() => setForm({ ...emptyDriver, ...driver })} onDelete={async () => { await api.deleteDriver(driver.id); refresh(); }} />
+          <RowActions key={driver.id} canEdit={can(user, "drivers", "edit")} canDelete={can(user, "drivers", "delete")} onEdit={() => setForm({ ...emptyDriver, ...driver })} onDelete={async () => { await api.deleteDriver(driver.id); refresh(); notify("Motorista excluido."); }} />
         ])}
       />
     </>
   );
 }
 
-function VehiclesModule({ vehicles, drivers, refresh }: any) {
+function VehiclesModule({ vehicles, drivers, refresh, user, notify }: any) {
   const [form, setForm] = useState(emptyVehicle);
+  const [search, setSearch] = useState("");
   const editing = Boolean(form.id);
+  const rows = vehicles.filter((vehicle: any) => matchesSearch(vehicle, search));
   return (
     <>
       <PageHeader eyebrow="Frota" title="Veiculos e capacidades" help="Digite um motorista novo ou escolha um existente na lista suspensa. Se o nome nao existir, ele sera criado automaticamente." />
-      <EditorPanel title={editing ? "Editar veiculo" : "Novo veiculo"} onCancel={editing ? () => setForm(emptyVehicle) : undefined} onSubmit={async () => {
+      {can(user, "vehicles", editing ? "edit" : "create") && <EditorPanel title={editing ? "Editar veiculo" : "Novo veiculo"} onCancel={editing ? () => setForm(emptyVehicle) : undefined} onSubmit={async () => {
         await api.saveVehicle(form as any);
         setForm(emptyVehicle);
         refresh();
+        notify(editing ? "Veiculo atualizado." : "Veiculo cadastrado. Motorista novo, se informado, tambem foi salvo.");
       }}>
         <Input label="Identificacao" value={form.label} onChange={(label) => setForm({ ...form, label })} />
         <Input label="Placa" value={form.plate} onChange={(plate) => setForm({ ...form, plate })} required={false} />
@@ -414,20 +447,21 @@ function VehiclesModule({ vehicles, drivers, refresh }: any) {
             {drivers.map((driver: any) => <option key={driver.id} value={driver.name} />)}
           </datalist>
         </label>
-      </EditorPanel>
+      </EditorPanel>}
+      <SearchBar value={search} onChange={setSearch} placeholder="Filtrar veiculos, placas ou motoristas" />
       <DataSection
         columns={["Veiculo", "Placa", "Capacidade", "Status", "Motoristas", "Acoes"]}
-        rows={vehicles.map((vehicle: any) => [
+        rows={rows.map((vehicle: any) => [
           vehicle.label,
           vehicle.plate ?? "-",
           vehicle.capacity,
           vehicle.status,
           vehicle.drivers?.map((item: any) => item.driver.name).join(", ") || "-",
-          <RowActions key={vehicle.id} onEdit={() => setForm({
+          <RowActions key={vehicle.id} canEdit={can(user, "vehicles", "edit")} canDelete={can(user, "vehicles", "delete")} onEdit={() => setForm({
             ...emptyVehicle,
             ...vehicle,
             driverName: vehicle.drivers?.[0]?.driver?.name ?? ""
-          })} onDelete={async () => { await api.deleteVehicle(vehicle.id); refresh(); }} />
+          })} onDelete={async () => { await api.deleteVehicle(vehicle.id); refresh(); notify("Veiculo excluido."); }} />
         ])}
       />
     </>
@@ -436,7 +470,8 @@ function VehiclesModule({ vehicles, drivers, refresh }: any) {
 
 function EmployeesModule({ employees, clients }: any) {
   const [clientId, setClientId] = useState("");
-  const filtered = clientId ? employees.filter((employee: any) => employee.clientId === clientId) : employees;
+  const [search, setSearch] = useState("");
+  const filtered = (clientId ? employees.filter((employee: any) => employee.clientId === clientId) : employees).filter((employee: any) => matchesSearch(employee, search));
   return (
     <>
       <PageHeader eyebrow="Base importada" title="Funcionarios por cliente" help="Use o filtro para consultar uma empresa especifica ou mantenha Todos para ver toda a base importada." />
@@ -446,6 +481,7 @@ function EmployeesModule({ employees, clients }: any) {
           {clients.map((client: any) => <option key={client.id} value={client.id}>{client.name}</option>)}
         </select>
       </div>
+      <SearchBar value={search} onChange={setSearch} placeholder="Filtrar funcionarios, clientes, enderecos ou destinos" />
       <DataSection
         columns={["Nome", "Cliente", "Endereco", "Destino", "Telefone", "Extras"]}
         rows={filtered.map((employee: any) => [
@@ -461,12 +497,22 @@ function EmployeesModule({ employees, clients }: any) {
   );
 }
 
-function ImportsModule({ clients, refresh }: any) {
+function ImportsModule({ clients, refresh, user, notify }: any) {
   const [clientId, setClientId] = useState("");
   const [rows, setRows] = useState<Record<string, unknown>[]>([]);
   const [fileName, setFileName] = useState("modelo-manual.xlsx");
   const [map, setMap] = useState<Record<string, string>>({});
   const columns = Object.keys(rows[0] ?? {});
+  const validation = useMemo(() => {
+    const missingNameRows = rows
+      .map((row, index) => ({ index: index + 1, value: String(row[map.name] ?? "").trim() }))
+      .filter((row) => !row.value)
+      .map((row) => row.index);
+    return {
+      validRows: rows.length - missingNameRows.length,
+      missingNameRows
+    };
+  }, [rows, map.name]);
 
   async function handleFile(file?: File) {
     if (!file) return;
@@ -504,6 +550,7 @@ function ImportsModule({ clients, refresh }: any) {
     setRows([]);
     setMap({});
     refresh();
+    notify(`${payloadRows.length} funcionarios importados.`);
   }
 
   return (
@@ -537,7 +584,11 @@ function ImportsModule({ clients, refresh }: any) {
               </select>
             </label>
           ))}
-          <button className="primary-button" disabled={!clientId || !map.name || rows.length === 0} onClick={importNow}>
+          {rows.length > 0 && <div className={validation.missingNameRows.length ? "validation-card error" : "validation-card"}>
+            <strong>{validation.validRows} linhas validas</strong>
+            {validation.missingNameRows.length > 0 && <span>Linhas sem nome ignoradas: {validation.missingNameRows.slice(0, 8).join(", ")}</span>}
+          </div>}
+          <button className="primary-button" disabled={!can(user, "imports", "create") || !clientId || !map.name || rows.length === 0 || validation.validRows === 0} onClick={importNow}>
             <Save size={17} /> Importar {rows.length || ""} linhas
           </button>
         </div>
@@ -557,11 +608,13 @@ type RouteCard = {
   status: "DRAFT" | "FINAL";
 };
 
-function RoutesModule({ clients, employees, vehicles, drivers, routes, refresh }: any) {
+function RoutesModule({ clients, employees, vehicles, drivers, routes, refresh, user, notify }: any) {
   const [clientId, setClientId] = useState("");
   const [date, setDate] = useState(new Date().toISOString().slice(0, 10));
   const [cards, setCards] = useState<RouteCard[]>([]);
-  const filteredEmployees = clientId ? employees.filter((employee: any) => employee.clientId === clientId) : employees;
+  const [employeeSearch, setEmployeeSearch] = useState("");
+  const [historySearch, setHistorySearch] = useState("");
+  const filteredEmployees = (clientId ? employees.filter((employee: any) => employee.clientId === clientId) : employees).filter((employee: any) => matchesSearch(employee, employeeSearch));
   const selectedEmployeeIds = useMemo(() => new Set(cards.flatMap((card) => card.employeeIds)), [cards]);
   const availableEmployees = filteredEmployees.filter((employee: any) => !selectedEmployeeIds.has(employee.id));
 
@@ -581,6 +634,20 @@ function RoutesModule({ clients, employees, vehicles, drivers, routes, refresh }
     setCards(cards.map((card) => card.instanceId === instanceId ? updater(card) : card));
   }
 
+  function duplicateCard(card: RouteCard) {
+    setCards([...cards, {
+      ...card,
+      instanceId: `${card.vehicleId}-${Date.now()}-copy`,
+      routeId: undefined,
+      name: `${card.name} copia`,
+      employeeIds: []
+    }]);
+  }
+
+  function printRoutes() {
+    window.print();
+  }
+
   function loadRoute(route: any) {
     const routeVehicle = route.vehicles?.[0];
     if (!routeVehicle) return;
@@ -598,6 +665,11 @@ function RoutesModule({ clients, employees, vehicles, drivers, routes, refresh }
   }
 
   async function saveBatch(status: "DRAFT" | "FINAL") {
+    const hasExistingRoute = cards.some((card) => card.routeId);
+    if (!can(user, "routes", hasExistingRoute ? "edit" : "create")) {
+      notify("Seu usuario nao tem permissao para salvar rotas.", "error");
+      return;
+    }
     await api.saveRouteBatch({
       clientId: clientId || undefined,
       date,
@@ -605,6 +677,7 @@ function RoutesModule({ clients, employees, vehicles, drivers, routes, refresh }
     });
     setCards([]);
     refresh();
+    notify(status === "FINAL" ? "Rotas salvas como versao final." : "Rotas salvas como rascunho.");
   }
 
   return (
@@ -631,14 +704,20 @@ function RoutesModule({ clients, employees, vehicles, drivers, routes, refresh }
               </button>
             ))}
           </div>
-          <button className="primary-button" disabled={cards.length === 0} onClick={() => saveBatch("FINAL")}>
+          <button className="primary-button" disabled={cards.length === 0 || !can(user, "routes", cards.some((card) => card.routeId) ? "edit" : "create")} onClick={() => saveBatch("FINAL")}>
             <Save size={17} /> Salvar todos
           </button>
-          <button className="secondary-button" disabled={cards.length === 0} onClick={() => saveBatch("DRAFT")}>
+          <button className="secondary-button" disabled={cards.length === 0 || !can(user, "routes", cards.some((card) => card.routeId) ? "edit" : "create")} onClick={() => saveBatch("DRAFT")}>
             <Archive size={17} /> Salvar rascunho
+          </button>
+          <button className="secondary-button" disabled={cards.length === 0} onClick={printRoutes}>
+            <FileSpreadsheet size={17} /> Imprimir lista
           </button>
         </div>
         <div className="route-groups">
+          <div className="route-search">
+            <SearchBar value={employeeSearch} onChange={setEmployeeSearch} placeholder="Buscar funcionario para alocar" />
+          </div>
           {cards.map((card) => {
             const vehicle = vehicles.find((item: any) => item.id === card.vehicleId);
             const over = card.employeeIds.length > Number(vehicle?.capacity ?? 0);
@@ -673,6 +752,9 @@ function RoutesModule({ clients, employees, vehicles, drivers, routes, refresh }
                 <button className="secondary-button" onClick={() => setCards(cards.filter((item) => item.instanceId !== card.instanceId))}>
                   <X size={17} /> Remover card
                 </button>
+                <button className="secondary-button" onClick={() => duplicateCard(card)}>
+                  <Plus size={17} /> Duplicar card
+                </button>
               </article>
             );
           })}
@@ -680,15 +762,16 @@ function RoutesModule({ clients, employees, vehicles, drivers, routes, refresh }
       </section>
       <section className="data-section route-history">
         <h3>Rotas salvas</h3>
+        <SearchBar value={historySearch} onChange={setHistorySearch} placeholder="Filtrar rotas salvas" />
         <DataTable
           columns={["Nome", "Cliente", "Data", "Status", "Veiculo", "Acoes"]}
-          rows={routes.map((route: any) => [
+          rows={routes.filter((route: any) => matchesSearch(route, historySearch)).map((route: any) => [
             route.name,
             route.client?.name ?? "-",
             new Date(route.date).toLocaleDateString("pt-BR"),
             route.status,
             route.vehicles?.[0]?.vehicle?.label ?? "-",
-            <button key={route.id} className="icon-button" title="Editar rota" onClick={() => loadRoute(route)}><Edit3 size={16} /></button>
+            can(user, "routes", "edit") && <button key={route.id} className="icon-button" title="Editar rota" onClick={() => loadRoute(route)}><Edit3 size={16} /></button>
           ])}
         />
       </section>
@@ -696,30 +779,34 @@ function RoutesModule({ clients, employees, vehicles, drivers, routes, refresh }
   );
 }
 
-function UsersModule({ users, refresh }: any) {
+function UsersModule({ users, refresh, user, notify }: any) {
   const [form, setForm] = useState(emptyUser);
+  const [search, setSearch] = useState("");
   const editing = Boolean(form.id);
+  const rows = users.filter((savedUser: any) => matchesSearch(savedUser, search));
   return (
     <>
       <PageHeader eyebrow="Seguranca" title="Usuarios e permissoes" help="Crie usuarios e defina permissoes por modulo. Logout fica em Configuracoes." />
-      <EditorPanel title={editing ? "Editar usuario" : "Novo usuario"} onCancel={editing ? () => setForm(emptyUser) : undefined} onSubmit={async () => {
+      {can(user, "users", editing ? "edit" : "create") && <EditorPanel title={editing ? "Editar usuario" : "Novo usuario"} onCancel={editing ? () => setForm(emptyUser) : undefined} onSubmit={async () => {
         await api.saveUser(form as any);
         setForm(emptyUser);
         refresh();
+        notify(editing ? "Usuario atualizado." : "Usuario cadastrado.");
       }}>
         <Input label="Nome" value={form.name} onChange={(name) => setForm({ ...form, name })} />
         <Input label="Email" type="email" value={form.email} onChange={(email) => setForm({ ...form, email })} />
         <Input label={editing ? "Nova senha" : "Senha inicial"} type="password" value={form.password} onChange={(password) => setForm({ ...form, password })} required={!editing} />
         <button type="button" className="secondary-button" onClick={() => setForm({ ...form, permissions: createFullPermissionMatrix() })}>Permissao total</button>
-      </EditorPanel>
+      </EditorPanel>}
+      <SearchBar value={search} onChange={setSearch} placeholder="Filtrar usuarios" />
       <DataSection
         columns={["Nome", "Email", "Status", "Permissoes", "Acoes"]}
-        rows={users.map((user: any) => [
-          user.name,
-          user.email,
-          user.status,
-          user.permissions?.filter((p: any) => p.allowed).length ?? 0,
-          <RowActions key={user.id} onEdit={() => setForm({ ...emptyUser, ...user, password: "", permissions: createFullPermissionMatrix() })} onDelete={async () => { await api.deleteUser(user.id); refresh(); }} />
+        rows={rows.map((savedUser: any) => [
+          savedUser.name,
+          savedUser.email,
+          savedUser.status,
+          savedUser.permissions?.filter((p: any) => p.allowed).length ?? 0,
+          <RowActions key={savedUser.id} canEdit={can(user, "users", "edit")} canDelete={can(user, "users", "delete")} onEdit={() => setForm({ ...emptyUser, ...savedUser, password: "", permissions: createFullPermissionMatrix() })} onDelete={async () => { await api.deleteUser(savedUser.id); refresh(); notify("Usuario excluido."); }} />
         ])}
       />
     </>
@@ -828,11 +915,25 @@ function Input({ label, value, onChange, type = "text", required = true }: { lab
   );
 }
 
-function RowActions({ onEdit, onDelete }: { onEdit: () => void; onDelete: () => void }) {
+function SearchBar({ value, onChange, placeholder }: { value: string; onChange: (value: string) => void; placeholder: string }) {
+  return (
+    <div className="search-bar">
+      <Search size={16} />
+      <input value={value} onChange={(event) => onChange(event.target.value)} placeholder={placeholder} />
+      <Filter size={16} />
+    </div>
+  );
+}
+
+function RowActions({ onEdit, onDelete, canEdit = true, canDelete = true }: { onEdit: () => void; onDelete: () => void; canEdit?: boolean; canDelete?: boolean }) {
   return (
     <div className="row-actions">
-      <button className="icon-button" title="Editar" onClick={onEdit}><Edit3 size={16} /></button>
-      <button className="icon-button" title="Excluir" onClick={onDelete}><Trash2 size={16} /></button>
+      {canEdit && <button className="icon-button" title="Editar" onClick={onEdit}><Edit3 size={16} /></button>}
+      {canDelete && <button className="icon-button" title="Excluir" onClick={() => {
+        if (window.confirm("Tem certeza que deseja excluir este registro?")) {
+          onDelete();
+        }
+      }}><Trash2 size={16} /></button>}
     </div>
   );
 }
