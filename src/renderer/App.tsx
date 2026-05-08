@@ -49,6 +49,8 @@ import type {
   SessionUser,
   UpdateCheckResult
 } from "../shared/contracts";
+import { useAsyncData } from "./hooks";
+import { downloadCsv, matchesSearch, routeSearchPayload } from "./utils";
 import "./styles/app.css";
 
 type ModuleKey = "dashboard" | "clients" | "employees" | "vehicles" | "drivers" | "imports" | "routes" | "users" | "settings";
@@ -74,68 +76,8 @@ const navItems: Array<{ key: ModuleKey; label: string; icon: React.ElementType }
   { key: "settings", label: "Configuracoes", icon: Settings }
 ];
 
-function useAsyncData<T>(loader: () => Promise<T>, deps: React.DependencyList, fallback: T) {
-  const [data, setData] = useState<T>(fallback);
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    let mounted = true;
-    setLoading(true);
-    loader()
-      .then((result) => mounted && setData(result))
-      .catch(() => mounted && setData(fallback))
-      .finally(() => mounted && setLoading(false));
-    return () => {
-      mounted = false;
-    };
-    // The caller owns the dependency list so this compact loader can be reused by every module.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, deps);
-
-  return { data, setData, loading };
-}
-
 function can(user: SessionUser, module: string, action: string) {
   return hasPermission(user.permissions, module as any, action as any);
-}
-
-function matchesSearch(value: unknown, search: string) {
-  return JSON.stringify(value ?? "").toLowerCase().includes(search.trim().toLowerCase());
-}
-
-function csvCell(value: unknown) {
-  return `"${String(value ?? "").replace(/"/g, "\"\"")}"`;
-}
-
-function downloadCsv(fileName: string, rows: string[][]) {
-  const csv = rows.map((row) => row.map(csvCell).join(";")).join("\r\n");
-  const blob = new Blob([`\uFEFF${csv}`], { type: "text/csv;charset=utf-8" });
-  const url = URL.createObjectURL(blob);
-  const anchor = document.createElement("a");
-  anchor.href = url;
-  anchor.download = `${fileName.replace(/[^\w.-]+/g, "-").toLowerCase()}.csv`;
-  anchor.click();
-  URL.revokeObjectURL(url);
-}
-
-function routeSearchPayload(route: any) {
-  return {
-    name: route.name,
-    client: route.client?.name,
-    status: route.status,
-    date: route.date,
-    vehicles: route.vehicles?.map((routeVehicle: any) => ({
-      label: routeVehicle.vehicle?.label,
-      plate: routeVehicle.vehicle?.plate,
-      driver: routeVehicle.driver?.name,
-      passengers: routeVehicle.passengers?.map((passenger: any) => ({
-        name: passenger.employee?.name,
-        client: passenger.employee?.client?.name,
-        address: passenger.employee?.address,
-        destination: passenger.employee?.destination
-      }))
-    }))
-  };
 }
 
 function SetupScreen({ onDone }: { onDone: () => void }) {
