@@ -22,6 +22,7 @@ import {
   listVehicles,
   saveClient,
   saveDriver,
+  saveEmployee,
   saveImportTemplate,
   saveRoute,
   saveRouteBatch,
@@ -41,6 +42,7 @@ import { hasPermission } from "../shared/permissions";
 import {
   clientSchema,
   driverSchema,
+  employeeSchema,
   importSchema,
   importTemplateSchema,
   loginSchema,
@@ -167,6 +169,7 @@ export function registerIpcHandlers() {
   protectedHandle(ipcChannels.deleteUser, "users", "delete", async (id: string, event) => deleteUser(id, await getSessionUserId(event)));
 
   protectedHandle(ipcChannels.listEmployees, "employees", "view", (clientId?: string) => listEmployees(clientId));
+  protectedHandle(ipcChannels.saveEmployee, "employees", "edit", (input) => saveEmployee(employeeSchema.parse(input)));
   protectedHandle(ipcChannels.importEmployees, "imports", "create", (input) => importEmployees(importSchema.parse(input)));
   protectedHandle(ipcChannels.listImportTemplates, "imports", "view", (clientId: string) => listImportTemplates(clientId));
   protectedHandle(ipcChannels.saveImportTemplate, "imports", "create", (input) => saveImportTemplate(importTemplateSchema.parse(input)));

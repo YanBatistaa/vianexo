@@ -44,9 +44,12 @@ import {
 } from "@dnd-kit/core";
 import { CSS } from "@dnd-kit/utilities";
 import { createFullPermissionMatrix, createViewOnlyPermissionMatrix, hasPermission } from "../shared/permissions";
+import { actions, modules } from "../shared/contracts";
 import type {
   EmployeeImportRow,
   PermissionMatrix,
+  PermissionGrant,
+  PermissionModule,
   RouteReport,
   SessionUser,
   UpdateCheckResult,
@@ -57,15 +60,18 @@ import { downloadCsv, matchesSearch, routeSearchPayload } from "./utils";
 import "./styles/app.css";
 
 type ModuleKey = "dashboard" | "clients" | "employees" | "vehicles" | "drivers" | "imports" | "routes" | "reports" | "users" | "settings";
+type ThemeMode = "classic" | "modern";
 
 const api = window.sistemaVans;
 const appName = "ViaNexo";
 const sessionStorageKey = "vianexo.sessionToken";
+const themeStorageKey = "vianexo.theme";
 
 const emptyClient = { id: "", name: "", document: "", contact: "", phone: "", email: "", contractNumber: "", monthlyValue: "", notes: "" };
 const emptyDriver = { id: "", name: "", phone: "", document: "", notes: "" };
 const emptyVehicle = { id: "", label: "", plate: "", capacity: 15, status: "ACTIVE", notes: "", driverName: "" };
 const emptyUser = { id: "", name: "", email: "", password: "", status: "ACTIVE", permissions: createViewOnlyPermissionMatrix() as PermissionMatrix };
+const emptyEmployee = { id: "", clientId: "", name: "", address: "", destination: "", phone: "", notes: "", extraData: {} as Record<string, unknown> };
 const unrestrictedModules = new Set<ModuleKey>(["dashboard", "settings"]);
 
 const navItems: Array<{ key: ModuleKey; label: string; icon: React.ElementType }> = [
@@ -80,6 +86,57 @@ const navItems: Array<{ key: ModuleKey; label: string; icon: React.ElementType }
   { key: "users", label: "Usuarios", icon: Wrench },
   { key: "settings", label: "Configuracoes", icon: Settings }
 ];
+
+const moduleLabels: Record<PermissionModule, string> = {
+  clients: "Clientes",
+  employees: "Funcionarios",
+  vehicles: "Frota",
+  drivers: "Motoristas",
+  imports: "Importacoes",
+  routes: "Rotas",
+  users: "Usuarios",
+  settings: "Configuracoes"
+};
+
+const actionLabels = {
+  view: "Ver",
+  create: "Criar",
+  edit: "Editar",
+  delete: "Excluir"
+} as const;
+
+const permissionPresets: Array<{ key: string; label: string; build: () => PermissionMatrix }> = [
+  { key: "view", label: "Somente leitura", build: createViewOnlyPermissionMatrix },
+  { key: "ops", label: "Operacao", build: () => presetPermissions(["clients", "employees", "vehicles", "drivers", "imports", "routes"]) },
+  { key: "manager", label: "Gestor", build: () => presetPermissions(["clients", "employees", "vehicles", "drivers", "imports", "routes", "settings"]) },
+  { key: "admin", label: "Administrador", build: createFullPermissionMatrix }
+];
+
+function presetPermissions(enabledModules: PermissionModule[]) {
+  const matrix = createViewOnlyPermissionMatrix();
+  enabledModules.forEach((moduleName) => {
+    actions.forEach((action) => {
+      matrix[moduleName][action] = true;
+    });
+  });
+  return matrix;
+}
+
+function grantsToMatrix(grants?: PermissionGrant[]) {
+  const matrix = createViewOnlyPermissionMatrix();
+  grants?.forEach((grant) => {
+    if (modules.includes(grant.module as PermissionModule) && actions.includes(grant.action as any)) {
+      matrix[grant.module as PermissionModule][grant.action as keyof PermissionMatrix[PermissionModule]] = grant.allowed;
+    }
+  });
+  return matrix;
+}
+
+function countAllowedPermissions(permissions: PermissionGrant[] | PermissionMatrix | undefined) {
+  if (!permissions) return 0;
+  if (Array.isArray(permissions)) return permissions.filter((permission) => permission.allowed).length;
+  return modules.reduce((sum, moduleName) => sum + actions.filter((action) => permissions[moduleName][action]).length, 0);
+}
 
 function can(user: SessionUser, module: string, action: string) {
   return hasPermission(user.permissions, module as any, action as any);
@@ -159,6 +216,7 @@ function LoginScreen({ onLogin }: { onLogin: (user: SessionUser) => void }) {
 
 function Shell({ user, onLogout }: { user: SessionUser; onLogout: () => void | Promise<void> }) {
   const [active, setActive] = useState<ModuleKey>("dashboard");
+  const [theme, setTheme] = useState<ThemeMode>(() => (localStorage.getItem(themeStorageKey) === "classic" ? "classic" : "modern"));
   const [refreshKey, setRefreshKey] = useState(0);
   const [updateState, setUpdateState] = useState<UpdateCheckResult | null>(null);
   const [updateRuntimeStatus, setUpdateRuntimeStatus] = useState<UpdateRuntimeStatus | null>(null);
@@ -191,6 +249,11 @@ function Shell({ user, onLogout }: { user: SessionUser; onLogout: () => void | P
     showUpdate: (update: UpdateCheckResult) => {
       setUpdateState(update);
       setUpdateHidden(false);
+    },
+    theme,
+    setTheme: (nextTheme: ThemeMode) => {
+      setTheme(nextTheme);
+      localStorage.setItem(themeStorageKey, nextTheme);
     },
     onLogout
   };
@@ -226,7 +289,7 @@ function Shell({ user, onLogout }: { user: SessionUser; onLogout: () => void | P
   }
 
   return (
-    <div className="app-shell">
+    <div className="app-shell" data-theme={theme}>
       <aside className="sidebar">
         <div className="sidebar-brand">
           <BrandMark compact />
@@ -548,11 +611,23 @@ function VehiclesModule({ vehicles, drivers, refresh, user, notify }: any) {
         <Input label="Placa" value={form.plate} onChange={(plate) => setForm({ ...form, plate })} required={false} />
         <Input label="Capacidade" type="number" value={String(form.capacity)} onChange={(capacity) => setForm({ ...form, capacity: Number(capacity) })} />
         <label>
+          Status
+          <select value={form.status} onChange={(event) => setForm({ ...form, status: event.target.value })}>
+            <option value="ACTIVE">Ativo</option>
+            <option value="MAINTENANCE">Manutencao</option>
+            <option value="INACTIVE">Inativo</option>
+          </select>
+        </label>
+        <label>
           Motorista
           <input list="drivers-list" value={form.driverName} onChange={(event) => setForm({ ...form, driverName: event.target.value })} placeholder="Digite ou escolha um motorista" />
           <datalist id="drivers-list">
             {drivers.map((driver: any) => <option key={driver.id} value={driver.name} />)}
           </datalist>
+        </label>
+        <label className="wide-field">
+          Anotacoes
+          <textarea value={form.notes} onChange={(event) => setForm({ ...form, notes: event.target.value })} placeholder="Ex.: manutencao preventiva, documentos, observacoes da frota" />
         </label>
       </EditorPanel>}
       <SearchBar value={search} onChange={setSearch} placeholder="Filtrar veiculos, placas ou motoristas" />
@@ -562,7 +637,7 @@ function VehiclesModule({ vehicles, drivers, refresh, user, notify }: any) {
           vehicle.label,
           vehicle.plate ?? "-",
           vehicle.capacity,
-          vehicle.status,
+          <span className={`status-pill ${String(vehicle.status).toLowerCase()}`} key={`${vehicle.id}-status`}>{vehicle.status}</span>,
           vehicle.drivers?.map((item: any) => item.driver.name).join(", ") || "-",
           <RowActions key={vehicle.id} canEdit={can(user, "vehicles", "edit")} canDelete={can(user, "vehicles", "delete")} onEdit={() => setForm({
             ...emptyVehicle,
@@ -575,13 +650,48 @@ function VehiclesModule({ vehicles, drivers, refresh, user, notify }: any) {
   );
 }
 
-function EmployeesModule({ employees, clients }: any) {
+function EmployeesModule({ employees, clients, refresh, user, notify }: any) {
+  const [form, setForm] = useState(emptyEmployee);
   const [clientId, setClientId] = useState("");
   const [search, setSearch] = useState("");
+  const editing = Boolean(form.id);
   const filtered = (clientId ? employees.filter((employee: any) => employee.clientId === clientId) : employees).filter((employee: any) => matchesSearch(employee, search));
   return (
     <>
       <PageHeader eyebrow="Base importada" title="Funcionarios por cliente" help="Use o filtro para consultar uma empresa especifica ou mantenha Todos para ver toda a base importada." />
+      {can(user, "employees", "edit") && (
+        <EditorPanel title={editing ? "Editar funcionario" : "Ajustar funcionario"} onCancel={editing ? () => setForm(emptyEmployee) : undefined} onSubmit={async () => {
+          await api.saveEmployee({
+            id: form.id || undefined,
+            clientId: form.clientId,
+            name: form.name,
+            address: form.address,
+            destination: form.destination,
+            phone: form.phone,
+            notes: form.notes,
+            extraData: form.extraData
+          });
+          setForm(emptyEmployee);
+          refresh();
+          notify("Funcionario atualizado.");
+        }}>
+          <label>
+            Cliente
+            <select value={form.clientId} onChange={(event) => setForm({ ...form, clientId: event.target.value })} required>
+              <option value="">Selecione</option>
+              {clients.map((client: any) => <option key={client.id} value={client.id}>{client.name}</option>)}
+            </select>
+          </label>
+          <Input label="Nome" value={form.name} onChange={(name) => setForm({ ...form, name })} />
+          <Input label="Endereco" value={form.address} onChange={(address) => setForm({ ...form, address })} required={false} />
+          <Input label="Destino" value={form.destination} onChange={(destination) => setForm({ ...form, destination })} required={false} />
+          <Input label="Telefone" value={form.phone} onChange={(phone) => setForm({ ...form, phone })} required={false} />
+          <label className="wide-field">
+            Anotacoes
+            <textarea value={form.notes} onChange={(event) => setForm({ ...form, notes: event.target.value })} placeholder="Observacoes do funcionario, restricoes, referencia de embarque" />
+          </label>
+        </EditorPanel>
+      )}
       <div className="toolbar">
         <select value={clientId} onChange={(event) => setClientId(event.target.value)}>
           <option value="">Todos os clientes</option>
@@ -590,14 +700,26 @@ function EmployeesModule({ employees, clients }: any) {
       </div>
       <SearchBar value={search} onChange={setSearch} placeholder="Filtrar funcionarios, clientes, enderecos ou destinos" />
       <DataSection
-        columns={["Nome", "Cliente", "Endereco", "Destino", "Telefone", "Extras"]}
+        columns={["Nome", "Cliente", "Endereco", "Destino", "Telefone", "Anotacoes", "Extras", "Acoes"]}
         rows={filtered.map((employee: any) => [
           employee.name,
           employee.client?.name,
           employee.address ?? "-",
           employee.destination ?? "-",
           employee.phone ?? "-",
-          Object.keys(JSON.parse(employee.extraData || "{}")).join(", ") || "-"
+          employee.notes ?? "-",
+          Object.keys(JSON.parse(employee.extraData || "{}")).join(", ") || "-",
+          can(user, "employees", "edit") ? (
+            <button key={employee.id} className="icon-button" title="Editar funcionario" onClick={() => setForm({
+              ...emptyEmployee,
+              ...employee,
+              notes: employee.notes ?? "",
+              address: employee.address ?? "",
+              destination: employee.destination ?? "",
+              phone: employee.phone ?? "",
+              extraData: JSON.parse(employee.extraData || "{}")
+            })}><Edit3 size={16} /></button>
+          ) : "-"
         ])}
       />
     </>
@@ -850,7 +972,7 @@ function RouteDropCard({ card, vehicle, drivers, employees, over, updateCard, re
     <article ref={setNodeRef} className={`route-card ${over ? "over" : ""} ${isOver ? "drop-target" : ""}`}>
       <header>
         <input value={card.name} onChange={(event) => updateCard(card.instanceId, (current) => ({ ...current, name: event.target.value }))} />
-        <span>{card.employeeIds.length}/{vehicle?.capacity ?? 0}</span>
+        <span className="route-capacity">{card.employeeIds.length}/{vehicle?.capacity ?? 0}</span>
       </header>
       <label>
         Motorista
@@ -1290,6 +1412,7 @@ function UsersModule({ users, refresh, user, notify }: any) {
   const [search, setSearch] = useState("");
   const editing = Boolean(form.id);
   const rows = users.filter((savedUser: any) => matchesSearch(savedUser, search));
+  const allowedCount = countAllowedPermissions(form.permissions);
   return (
     <>
       <PageHeader eyebrow="Seguranca" title="Usuarios e permissoes" help="Crie usuarios e defina permissoes por modulo. Logout fica em Configuracoes." />
@@ -1302,7 +1425,18 @@ function UsersModule({ users, refresh, user, notify }: any) {
         <Input label="Nome" value={form.name} onChange={(name) => setForm({ ...form, name })} />
         <Input label="Email" type="email" value={form.email} onChange={(email) => setForm({ ...form, email })} />
         <Input label={editing ? "Nova senha" : "Senha inicial"} type="password" value={form.password} onChange={(password) => setForm({ ...form, password })} required={!editing} />
-        <button type="button" className="secondary-button" onClick={() => setForm({ ...form, permissions: createFullPermissionMatrix() })}>Permissao total</button>
+        <label>
+          Status
+          <select value={form.status} onChange={(event) => setForm({ ...form, status: event.target.value })}>
+            <option value="ACTIVE">Ativo</option>
+            <option value="INACTIVE">Inativo</option>
+          </select>
+        </label>
+        <div className="permission-summary">
+          <strong>{allowedCount}/32 permissoes</strong>
+          <span>{editing ? "Ajuste fino do perfil" : "Escolha um preset ou marque modulo por modulo"}</span>
+        </div>
+        <PermissionEditor value={form.permissions} onChange={(permissions) => setForm({ ...form, permissions })} />
       </EditorPanel>}
       <SearchBar value={search} onChange={setSearch} placeholder="Filtrar usuarios" />
       <DataSection
@@ -1311,15 +1445,73 @@ function UsersModule({ users, refresh, user, notify }: any) {
           savedUser.name,
           savedUser.email,
           savedUser.status,
-          savedUser.permissions?.filter((p: any) => p.allowed).length ?? 0,
-          <RowActions key={savedUser.id} canEdit={can(user, "users", "edit")} canDelete={can(user, "users", "delete")} onEdit={() => setForm({ ...emptyUser, ...savedUser, password: "", permissions: createFullPermissionMatrix() })} onDelete={async () => { await api.deleteUser(savedUser.id); refresh(); notify("Usuario excluido."); }} />
+          `${countAllowedPermissions(savedUser.permissions)}/32`,
+          <RowActions key={savedUser.id} canEdit={can(user, "users", "edit")} canDelete={can(user, "users", "delete")} onEdit={() => setForm({ ...emptyUser, ...savedUser, password: "", permissions: grantsToMatrix(savedUser.permissions) })} onDelete={async () => { await api.deleteUser(savedUser.id); refresh(); notify("Usuario excluido."); }} />
         ])}
       />
     </>
   );
 }
 
-function SettingsModule({ user, showUpdate, onLogout, refresh, notify }: any) {
+function PermissionEditor({ value, onChange }: { value: PermissionMatrix; onChange: (permissions: PermissionMatrix) => void }) {
+  function toggle(moduleName: PermissionModule, action: (typeof actions)[number]) {
+    onChange({
+      ...value,
+      [moduleName]: {
+        ...value[moduleName],
+        [action]: !value[moduleName][action]
+      }
+    });
+  }
+
+  function toggleModule(moduleName: PermissionModule, enabled: boolean) {
+    onChange({
+      ...value,
+      [moduleName]: actions.reduce((next, action) => {
+        next[action] = enabled;
+        return next;
+      }, {} as PermissionMatrix[PermissionModule])
+    });
+  }
+
+  return (
+    <div className="permission-editor wide-field">
+      <div className="preset-row">
+        {permissionPresets.map((preset) => (
+          <button key={preset.key} type="button" className="secondary-button" onClick={() => onChange(preset.build())}>
+            {preset.label}
+          </button>
+        ))}
+      </div>
+      <div className="permission-grid">
+        {modules.map((moduleName) => {
+          const moduleAllowed = actions.every((action) => value[moduleName][action]);
+          return (
+            <section key={moduleName} className="permission-card">
+              <header>
+                <strong>{moduleLabels[moduleName]}</strong>
+                <label className="mini-toggle">
+                  <input type="checkbox" checked={moduleAllowed} onChange={(event) => toggleModule(moduleName, event.target.checked)} />
+                  Tudo
+                </label>
+              </header>
+              <div>
+                {actions.map((action) => (
+                  <label key={`${moduleName}-${action}`} className="permission-chip">
+                    <input type="checkbox" checked={value[moduleName][action]} onChange={() => toggle(moduleName, action)} />
+                    {actionLabels[action]}
+                  </label>
+                ))}
+              </div>
+            </section>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+function SettingsModule({ user, showUpdate, onLogout, refresh, notify, theme, setTheme }: any) {
   const [updateMessage, setUpdateMessage] = useState("");
   const [checking, setChecking] = useState(false);
   const [restoring, setRestoring] = useState(false);
@@ -1389,8 +1581,19 @@ function SettingsModule({ user, showUpdate, onLogout, refresh, notify }: any) {
   return (
     <>
       <PageHeader eyebrow="Preferencias" title="Configuracoes" help="Aqui ficam acoes de conta, atualizacao manual e manutencao local do app." />
-      <section className="settings-grid">
-        <div className="panel">
+      <section className="settings-mosaic">
+        <div className="settings-hero-panel">
+          <div>
+            <span className="dialog-eyebrow">Aparencia</span>
+            <h3>Tema do sistema</h3>
+            <p className="muted-copy">Classico preserva o visual atual. Moderno usa a mesma paleta com superficies limpas, grid fluido e leitura mais leve.</p>
+          </div>
+          <div className="theme-switcher" role="group" aria-label="Tema">
+            <button className={theme === "classic" ? "active" : ""} onClick={() => setTheme("classic")}>Classico</button>
+            <button className={theme === "modern" ? "active" : ""} onClick={() => setTheme("modern")}>Moderno</button>
+          </div>
+        </div>
+        <div className="panel settings-account-panel">
           <h3>Conta</h3>
           <p className="muted-copy">Usuario atual: <strong>{user.name}</strong></p>
           <button className="secondary-button danger" onClick={() => onLogout()}><LogOut size={17} /> Sair da conta</button>
@@ -1403,11 +1606,11 @@ function SettingsModule({ user, showUpdate, onLogout, refresh, notify }: any) {
           </button>
           {updateMessage && <p className="success-line">{updateMessage}</p>}
         </div>
-        <div className="panel">
+        <div className="panel settings-help-panel">
           <h3>Ajuda no app</h3>
           <p className="muted-copy">Os icones de interrogacao ao lado dos titulos explicam o uso de cada tela e reduzem a necessidade de treinamento externo.</p>
         </div>
-        <div className="panel">
+        <div className="panel settings-backup-panel">
           <h3>Backup e restauracao</h3>
           <p className="muted-copy">Pasta atual: <strong>{backupSettings?.directory ?? "Carregando..."}</strong></p>
           {backupSettings?.latestBackup ? (
@@ -1426,7 +1629,7 @@ function SettingsModule({ user, showUpdate, onLogout, refresh, notify }: any) {
             <DatabaseBackup size={17} /> {restoring ? "Restaurando..." : "Restaurar backup"}
           </button>
         </div>
-        <div className="panel audit-panel">
+        <div className="panel audit-panel settings-audit-panel">
           <h3>Auditoria recente</h3>
           {auditLogs.length === 0 ? <p className="muted-copy">Nenhuma acao sensivel registrada.</p> : (
             <ul>
@@ -1439,7 +1642,7 @@ function SettingsModule({ user, showUpdate, onLogout, refresh, notify }: any) {
             </ul>
           )}
         </div>
-        <div className="panel">
+        <div className="panel settings-sync-panel">
           <h3>Nuvem e portal</h3>
           <p className="muted-copy">Exporte um pacote JSON versionado para alimentar sincronizacao futura ou um portal de cliente.</p>
           <button className="secondary-button" onClick={exportSyncPackage} disabled={!can(user, "settings", "view")}>

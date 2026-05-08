@@ -81,6 +81,10 @@ export type EmployeeImportRow = {
   extraData?: Record<string, unknown>;
 };
 
+export type EmployeeInput = EmployeeImportRow & {
+  clientId: string;
+};
+
 export type ImportPayload = {
   clientId: string;
   fileName: string;
@@ -231,6 +235,7 @@ export type DesktopApi = {
   saveUser(input: UserInput & { id?: string }): ApiResult<any>;
   deleteUser(id: string): ApiResult<boolean>;
   listEmployees(clientId?: string): ApiResult<any[]>;
+  saveEmployee(input: EmployeeInput & { id?: string }): ApiResult<any>;
   importEmployees(payload: ImportPayload): ApiResult<{ importJob: any; employees: any[] }>;
   listImportTemplates(clientId: string): ApiResult<any[]>;
   saveImportTemplate(input: ImportTemplateInput): ApiResult<any>;

@@ -29,7 +29,8 @@ body {
 
 button,
 input,
-select {
+select,
+textarea {
   font: inherit;
 }
 
@@ -116,7 +117,8 @@ label {
 }
 
 input,
-select {
+select,
+textarea {
   min-height: 40px;
   border: 1px solid var(--line);
   background: #fffdf8;
@@ -129,8 +131,14 @@ select[multiple] {
   min-height: 86px;
 }
 
+textarea {
+  min-height: 92px;
+  resize: vertical;
+}
+
 input:focus,
-select:focus {
+select:focus,
+textarea:focus {
   border-color: var(--blue);
   box-shadow: 0 0 0 3px rgba(36, 95, 122, 0.14);
 }
@@ -382,6 +390,11 @@ th {
   align-items: end;
 }
 
+.wide-field,
+.permission-editor {
+  grid-column: 1 / -1;
+}
+
 .toolbar,
 .inline-action,
 .report-toolbar {
@@ -562,8 +575,8 @@ th {
 }
 
 .route-card header {
-  display: flex;
-  justify-content: space-between;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
   gap: 8px;
   font-size: 18px;
@@ -571,6 +584,17 @@ th {
 
 .route-card header input {
   font-weight: 800;
+  min-width: 0;
+}
+
+.route-capacity {
+  min-width: 48px;
+  padding: 6px 8px;
+  text-align: center;
+  border: 1px solid var(--line);
+  background: #fffdf8;
+  font-size: 13px;
+  font-weight: 900;
 }
 
 .route-card ul {
@@ -623,10 +647,166 @@ th {
   cursor: not-allowed;
 }
 
-.settings-grid {
+.settings-grid,
+.settings-mosaic {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 16px;
+}
+
+.settings-mosaic {
+  grid-template-columns: 1.25fr 0.8fr 1fr;
+  grid-auto-flow: dense;
+  align-items: stretch;
+}
+
+.settings-hero-panel {
+  grid-column: span 2;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 18px;
+  align-items: center;
+  padding: 20px;
+  background: var(--ink);
+  color: var(--panel);
+  border: 1px solid var(--ink);
+  box-shadow: var(--shadow);
+}
+
+.settings-hero-panel h3 {
+  font-size: 24px;
+}
+
+.settings-hero-panel .muted-copy,
+.settings-hero-panel .dialog-eyebrow {
+  color: rgba(255, 250, 240, 0.76);
+}
+
+.settings-backup-panel,
+.settings-audit-panel {
+  grid-row: span 2;
+}
+
+.settings-sync-panel {
+  grid-column: span 2;
+}
+
+.theme-switcher,
+.preset-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.theme-switcher {
+  padding: 4px;
+  background: rgba(255, 250, 240, 0.12);
+  border: 1px solid rgba(255, 250, 240, 0.18);
+}
+
+.theme-switcher button {
+  min-height: 38px;
+  border: 0;
+  padding: 0 14px;
+  background: transparent;
+  color: var(--panel);
+  font-weight: 900;
+}
+
+.theme-switcher button.active {
+  background: var(--panel);
+  color: var(--ink);
+}
+
+.permission-summary {
+  display: grid;
+  gap: 2px;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  background: rgba(36, 95, 122, 0.06);
+}
+
+.permission-summary span {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.permission-editor {
+  display: grid;
+  gap: 12px;
+}
+
+.permission-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 10px;
+}
+
+.permission-card {
+  display: grid;
+  gap: 10px;
+  padding: 12px;
+  background: #fffdf8;
+  border: 1px solid var(--line);
+}
+
+.permission-card header {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  align-items: center;
+}
+
+.permission-card > div {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.permission-chip,
+.mini-toggle {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  color: var(--ink);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.permission-chip input,
+.mini-toggle input {
+  min-height: auto;
+  width: 16px;
+  height: 16px;
+  padding: 0;
+}
+
+.status-pill {
+  display: inline-flex;
+  align-items: center;
+  min-height: 26px;
+  padding: 4px 9px;
+  border: 1px solid var(--line);
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.status-pill.active {
+  border-color: rgba(46, 111, 87, 0.38);
+  color: var(--green);
+  background: rgba(46, 111, 87, 0.08);
+}
+
+.status-pill.maintenance {
+  border-color: rgba(189, 122, 34, 0.38);
+  color: var(--amber);
+  background: rgba(189, 122, 34, 0.1);
+}
+
+.status-pill.inactive {
+  border-color: rgba(166, 66, 53, 0.38);
+  color: var(--red);
+  background: rgba(166, 66, 53, 0.08);
 }
 
 .audit-panel ul {
@@ -814,13 +994,88 @@ th {
   .metric-grid,
   .work-board,
   .import-grid,
-  .settings-grid {
+  .settings-grid,
+  .settings-mosaic {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .settings-hero-panel,
+  .settings-sync-panel {
+    grid-column: 1 / -1;
   }
 
   .editor-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
+}
+
+.app-shell[data-theme="modern"] {
+  --paper: #f4f1ea;
+  --panel: rgba(255, 253, 248, 0.88);
+  --ink: #1f211e;
+  --muted: #6d6a61;
+  --line: rgba(32, 32, 29, 0.12);
+  --shadow: 0 24px 70px rgba(32, 32, 29, 0.10);
+  background:
+    radial-gradient(circle at 18% 12%, rgba(46, 111, 87, 0.12), transparent 26%),
+    linear-gradient(135deg, rgba(255, 253, 248, 0.92), rgba(246, 242, 234, 0.88));
+}
+
+.app-shell[data-theme="modern"] .sidebar {
+  margin: 14px 0 14px 14px;
+  border: 1px solid rgba(255, 250, 240, 0.12);
+  background: rgba(32, 32, 29, 0.94);
+  box-shadow: var(--shadow);
+}
+
+.app-shell[data-theme="modern"] .content {
+  padding: 32px;
+}
+
+.app-shell[data-theme="modern"] .panel,
+.app-shell[data-theme="modern"] .editor-panel,
+.app-shell[data-theme="modern"] .data-section,
+.app-shell[data-theme="modern"] .metric-card,
+.app-shell[data-theme="modern"] .route-card,
+.app-shell[data-theme="modern"] .work-board > div {
+  border-color: rgba(32, 32, 29, 0.10);
+  background: rgba(255, 253, 248, 0.82);
+  box-shadow: 0 14px 40px rgba(32, 32, 29, 0.08);
+  backdrop-filter: blur(18px);
+}
+
+.app-shell[data-theme="modern"] .page-header h2 {
+  font-size: 38px;
+  font-weight: 850;
+}
+
+.app-shell[data-theme="modern"] .primary-button,
+.app-shell[data-theme="modern"] .secondary-button,
+.app-shell[data-theme="modern"] .icon-button,
+.app-shell[data-theme="modern"] input,
+.app-shell[data-theme="modern"] select,
+.app-shell[data-theme="modern"] textarea,
+.app-shell[data-theme="modern"] .search-bar,
+.app-shell[data-theme="modern"] .permission-card,
+.app-shell[data-theme="modern"] .employee-chip,
+.app-shell[data-theme="modern"] .route-card li,
+.app-shell[data-theme="modern"] .vehicle-picks button,
+.app-shell[data-theme="modern"] .route-capacity,
+.app-shell[data-theme="modern"] .status-pill {
+  border-radius: 8px;
+}
+
+.app-shell[data-theme="modern"] .metric-card {
+  border-top-width: 0;
+  border-left: 4px solid var(--ink);
+}
+
+.app-shell[data-theme="modern"] .route-groups {
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+}
+
+.app-shell[data-theme="modern"] .settings-mosaic {
+  grid-template-columns: minmax(280px, 1.1fr) minmax(260px, 0.9fr) minmax(320px, 1.2fr);
 }
 
 @media print {

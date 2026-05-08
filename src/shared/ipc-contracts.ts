@@ -114,6 +114,12 @@ export const ipcContracts: Record<keyof DesktopApi, IpcContract> = {
     payload: "clientId?",
     returns: "Employee[]"
   },
+  saveEmployee: {
+    channel: "employees:save",
+    permission: { module: "employees", action: "edit" },
+    payload: "EmployeeInput & { id? }",
+    returns: "Employee"
+  },
   importEmployees: {
     channel: "employees:import",
     permission: { module: "imports", action: "create" },

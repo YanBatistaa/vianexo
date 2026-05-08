@@ -67,6 +67,17 @@ export const importSchema = z.object({
   }))
 });
 
+export const employeeSchema = z.object({
+  id: z.string().optional(),
+  clientId: z.string(),
+  name: z.string().min(1),
+  address: z.string().optional(),
+  destination: z.string().optional(),
+  phone: z.string().optional(),
+  notes: z.string().optional(),
+  extraData: z.record(z.unknown()).optional()
+});
+
 export const importTemplateSchema = z.object({
   clientId: z.string(),
   name: z.string().min(2),

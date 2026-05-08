@@ -378,6 +378,26 @@ export async function listEmployees(clientId?: string) {
   });
 }
 
+export async function saveEmployee(input: any) {
+  const data = clean({
+    clientId: input.clientId,
+    name: input.name,
+    address: input.address,
+    destination: input.destination,
+    phone: input.phone,
+    notes: input.notes,
+    extraData: JSON.stringify(input.extraData ?? {})
+  });
+  const prisma = getPrisma();
+  const employee = input.id
+    ? await prisma.employee.update({ where: { id: input.id }, data })
+    : await prisma.employee.create({ data });
+  return prisma.employee.findUnique({
+    where: { id: employee.id },
+    include: { client: true }
+  });
+}
+
 export async function importEmployees(input: any) {
   const prisma = getPrisma();
   const normalize = (value: string) => value.trim().replace(/\s+/g, " ").toLowerCase();

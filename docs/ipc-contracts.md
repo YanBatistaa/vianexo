@@ -22,6 +22,7 @@ Fonte de verdade: `src/shared/ipc-contracts.ts`.
 | `saveUser` | `users:save` | `users.create/edit` | `UserInput & { id? }` | `User` |
 | `deleteUser` | `users:delete` | `users.delete` | `id` | `boolean` |
 | `listEmployees` | `employees:list` | `employees.view` | `clientId?` | `Employee[]` |
+| `saveEmployee` | `employees:save` | `employees.edit` | `EmployeeInput & { id? }` | `Employee` |
 | `importEmployees` | `employees:import` | `imports.create` | `ImportPayload` | `{ importJob, employees }` |
 | `listImportTemplates` | `imports:templates:list` | `imports.view` | `clientId` | `ImportTemplate[]` |
 | `saveImportTemplate` | `imports:templates:save` | `imports.create` | `ImportTemplateInput` | `ImportTemplate` |
