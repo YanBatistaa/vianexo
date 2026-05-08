@@ -1,0 +1,67 @@
+name: Build and release ViaNexo
+
+on:
+  workflow_dispatch:
+    inputs:
+      release_notes:
+        description: "Notas da versao"
+        required: false
+        default: "Nova versao do ViaNexo."
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Smoke test
+        run: npm run test:smoke
+
+      - name: Build installer
+        run: npm run package
+
+      - name: Normalize updater asset names
+        shell: pwsh
+        run: |
+          $version = node -p "require('./package.json').version"
+          $spacedExe = "release/ViaNexo Setup $version.exe"
+          $spacedBlockmap = "release/ViaNexo Setup $version.exe.blockmap"
+          $hyphenExe = "release/ViaNexo-Setup-$version.exe"
+          $hyphenBlockmap = "release/ViaNexo-Setup-$version.exe.blockmap"
+          Copy-Item $spacedExe $hyphenExe -Force
+          Copy-Item $spacedBlockmap $hyphenBlockmap -Force
+          (Get-Content release/latest.yml) -replace [regex]::Escape("ViaNexo Setup $version.exe"), "ViaNexo-Setup-$version.exe" | Set-Content release/latest.yml
+
+      - name: Create GitHub release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_NOTES: ${{ inputs.release_notes }}
+        run: |
+          $version = node -p "require('./package.json').version"
+          $tag = "v$version"
+          git tag $tag
+          git push origin $tag
+          gh release create $tag `
+            "release/ViaNexo-Setup-$version.exe" `
+            "release/ViaNexo-Setup-$version.exe.blockmap" `
+            "release/latest.yml" `
+            --title "ViaNexo $version" `
+            --notes "$env:RELEASE_NOTES"

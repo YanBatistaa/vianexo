@@ -1,10 +1,16 @@
-export const modules = ["clients", "employees", "vehicles", "drivers", "imports", "routes", "users"] as const;
+export const modules = ["clients", "employees", "vehicles", "drivers", "imports", "routes", "users", "settings"] as const;
 export const actions = ["view", "create", "edit", "delete"] as const;
 
 export type PermissionModule = (typeof modules)[number];
 export type PermissionAction = (typeof actions)[number];
 
 export type PermissionMatrix = Record<PermissionModule, Record<PermissionAction, boolean>>;
+
+export type PermissionGrant = {
+  module: string;
+  action: string;
+  allowed: boolean;
+};
 
 export type AppBootstrap = {
   needsSetup: boolean;
@@ -26,7 +32,7 @@ export type SessionUser = {
   id: string;
   name: string;
   email: string;
-  permissions?: unknown[];
+  permissions?: PermissionGrant[];
 };
 
 export type ClientInput = {
@@ -115,6 +121,13 @@ export type BackupResult = {
   createdAt: string;
 };
 
+export type RestoreBackupResult = {
+  restored: boolean;
+  restoredFrom?: string;
+  safetyCopyPath?: string;
+  restoredAt?: string;
+};
+
 export type UpdateCheckResult = {
   status: "available" | "not-available" | "disabled" | "error";
   currentVersion: string;
@@ -134,6 +147,7 @@ export type DesktopApi = {
   bootstrap(): ApiResult<AppBootstrap>;
   setupAdmin(input: SetupAdminInput): ApiResult<{ id: string; name: string; email: string }>;
   login(input: LoginInput): ApiResult<SessionUser>;
+  logout(): ApiResult<boolean>;
   listClients(): ApiResult<any[]>;
   saveClient(input: ClientInput & { id?: string }): ApiResult<any>;
   deleteClient(id: string): ApiResult<boolean>;
@@ -152,6 +166,7 @@ export type DesktopApi = {
   saveRoute(input: RouteDraftInput & { id?: string }): ApiResult<any>;
   saveRouteBatch(input: RouteBatchInput): ApiResult<any[]>;
   createBackup(): ApiResult<BackupResult>;
+  restoreBackup(): ApiResult<RestoreBackupResult>;
   checkForUpdates(): ApiResult<UpdateCheckResult>;
   downloadAndInstallUpdate(): ApiResult<UpdateInstallResult>;
 };

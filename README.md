@@ -54,6 +54,7 @@ npm.cmd run dev
 ```powershell
 npm.cmd run lint
 npm.cmd run test:smoke
+npm.cmd run test:permissions
 npm.cmd run build
 ```
 
@@ -94,3 +95,7 @@ O app consulta releases publicas do GitHub para verificar atualizacoes:
 https://github.com/YanBatistaa/vianexo
 
 Quando uma release com versao maior e publicada, o ViaNexo mostra uma notificacao no app permitindo atualizar agora ou depois.
+
+## Release automatizada
+
+O workflow `Build and release ViaNexo` pode ser executado manualmente no GitHub Actions. Ele roda lint, smoke test, build do instalador, normaliza os assets do auto-update para `ViaNexo-Setup-<versao>.exe` e cria a release com `latest.yml`.

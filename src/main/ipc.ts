@@ -1,5 +1,5 @@
-import { ipcMain } from "electron";
-import { app } from "electron";
+import { type IpcMainInvokeEvent, ipcMain } from "electron";
+import { app, dialog } from "electron";
 import { autoUpdater } from "electron-updater";
 import {
   bootstrap,
@@ -8,6 +8,7 @@ import {
   deleteDriver,
   deleteUser,
   deleteVehicle,
+  getUserAccessState,
   importEmployees,
   listClients,
   listDrivers,
@@ -22,8 +23,11 @@ import {
   saveUser,
   saveVehicle,
   setupAdmin,
-  login
+  login,
+  restoreBackup
 } from "./repositories";
+import type { PermissionAction, PermissionModule } from "../shared/contracts";
+import { hasPermission } from "../shared/permissions";
 import {
   clientSchema,
   driverSchema,
@@ -38,6 +42,8 @@ import {
 
 autoUpdater.autoDownload = false;
 autoUpdater.autoInstallOnAppQuit = false;
+
+const sessions = new Map<number, string>();
 
 function compareVersions(versionA: string, versionB: string) {
   const left = versionA.split(".").map((part) => Number(part) || 0);
@@ -56,11 +62,11 @@ function compareVersions(versionA: string, versionB: string) {
 
 function handle<TInput, TOutput>(
   channel: string,
-  handler: (input: TInput) => Promise<TOutput> | TOutput
+  handler: (input: TInput, event: IpcMainInvokeEvent) => Promise<TOutput> | TOutput
 ) {
-  ipcMain.handle(channel, async (_event, input: TInput) => {
+  ipcMain.handle(channel, async (event, input: TInput) => {
     try {
-      return await handler(input);
+      return await handler(input, event);
     } catch (error) {
       const message = error instanceof Error ? error.message : "Erro inesperado.";
       throw new Error(message);
@@ -68,35 +74,93 @@ function handle<TInput, TOutput>(
   });
 }
 
+async function requirePermission(event: IpcMainInvokeEvent, module: PermissionModule, action: PermissionAction) {
+  await getSessionUserId(event);
+  await assertPermissionForUser(event, module, action);
+}
+
+async function getSessionUserId(event: IpcMainInvokeEvent) {
+  const userId = sessions.get(event.sender.id);
+  if (!userId) {
+    throw new Error("Sessao expirada. Entre novamente.");
+  }
+  return userId;
+}
+
+async function assertPermissionForUser(event: IpcMainInvokeEvent, module: PermissionModule, action: PermissionAction) {
+  const userId = await getSessionUserId(event);
+  const user = await getUserAccessState(userId);
+  if (!user || user.status !== "ACTIVE") {
+    sessions.delete(event.sender.id);
+    throw new Error("Sessao invalida. Entre novamente.");
+  }
+
+  if (!hasPermission(user.permissions, module, action)) {
+    throw new Error("Seu usuario nao tem permissao para esta acao.");
+  }
+}
+
+function protectedHandle<TInput, TOutput>(
+  channel: string,
+  module: PermissionModule,
+  action: PermissionAction | ((input: TInput) => PermissionAction),
+  handler: (input: TInput, event: IpcMainInvokeEvent) => Promise<TOutput> | TOutput
+) {
+  handle(channel, async (input: TInput, event) => {
+    const resolvedAction = typeof action === "function" ? action(input) : action;
+    await requirePermission(event, module, resolvedAction);
+    return handler(input, event);
+  });
+}
+
 export function registerIpcHandlers() {
   handle("app:bootstrap", () => bootstrap());
   handle("setup:admin", (input) => setupAdmin(setupAdminSchema.parse(input)));
-  handle("auth:login", (input) => login(loginSchema.parse(input)));
+  handle("auth:login", async (input, event) => {
+    const user = await login(loginSchema.parse(input));
+    sessions.set(event.sender.id, user.id);
+    return user;
+  });
+  handle("auth:logout", (_input, event) => {
+    sessions.delete(event.sender.id);
+    return true;
+  });
 
-  handle("clients:list", () => listClients());
-  handle("clients:save", (input) => saveClient(clientSchema.parse(input)));
-  handle("clients:delete", (id: string) => deleteClient(id));
+  protectedHandle("clients:list", "clients", "view", () => listClients());
+  protectedHandle("clients:save", "clients", (input: any) => input?.id ? "edit" : "create", (input) => saveClient(clientSchema.parse(input)));
+  protectedHandle("clients:delete", "clients", "delete", (id: string) => deleteClient(id));
 
-  handle("drivers:list", () => listDrivers());
-  handle("drivers:save", (input) => saveDriver(driverSchema.parse(input)));
-  handle("drivers:delete", (id: string) => deleteDriver(id));
+  protectedHandle("drivers:list", "drivers", "view", () => listDrivers());
+  protectedHandle("drivers:save", "drivers", (input: any) => input?.id ? "edit" : "create", (input) => saveDriver(driverSchema.parse(input)));
+  protectedHandle("drivers:delete", "drivers", "delete", (id: string) => deleteDriver(id));
 
-  handle("vehicles:list", () => listVehicles());
-  handle("vehicles:save", (input) => saveVehicle(vehicleSchema.parse(input)));
-  handle("vehicles:delete", (id: string) => deleteVehicle(id));
+  protectedHandle("vehicles:list", "vehicles", "view", () => listVehicles());
+  protectedHandle("vehicles:save", "vehicles", (input: any) => input?.id ? "edit" : "create", (input) => saveVehicle(vehicleSchema.parse(input)));
+  protectedHandle("vehicles:delete", "vehicles", "delete", (id: string) => deleteVehicle(id));
 
-  handle("users:list", () => listUsers());
-  handle("users:save", (input) => saveUser(userSchema.parse(input)));
-  handle("users:delete", (id: string) => deleteUser(id));
+  protectedHandle("users:list", "users", "view", () => listUsers());
+  protectedHandle("users:save", "users", (input: any) => input?.id ? "edit" : "create", async (input, event) => saveUser(userSchema.parse(input), await getSessionUserId(event)));
+  protectedHandle("users:delete", "users", "delete", async (id: string, event) => deleteUser(id, await getSessionUserId(event)));
 
-  handle("employees:list", (clientId?: string) => listEmployees(clientId));
-  handle("employees:import", (input) => importEmployees(importSchema.parse(input)));
+  protectedHandle("employees:list", "employees", "view", (clientId?: string) => listEmployees(clientId));
+  protectedHandle("employees:import", "imports", "create", (input) => importEmployees(importSchema.parse(input)));
 
-  handle("routes:list", () => listRoutes());
-  handle("routes:save", (input) => saveRoute(routeSchema.parse(input)));
-  handle("routes:save-batch", (input) => saveRouteBatch(routeBatchSchema.parse(input)));
+  protectedHandle("routes:list", "routes", "view", () => listRoutes());
+  protectedHandle("routes:save", "routes", (input: any) => input?.id ? "edit" : "create", (input) => saveRoute(routeSchema.parse(input)));
+  protectedHandle("routes:save-batch", "routes", (input: any) => input?.routes?.some((route: any) => route.id) ? "edit" : "create", (input) => saveRouteBatch(routeBatchSchema.parse(input)));
 
-  handle("backup:create", () => createBackup());
+  protectedHandle("backup:create", "settings", "create", () => createBackup());
+  protectedHandle("backup:restore", "settings", "edit", async () => {
+    const result = await dialog.showOpenDialog({
+      title: "Selecionar backup do ViaNexo",
+      properties: ["openFile"],
+      filters: [{ name: "Banco SQLite", extensions: ["db"] }]
+    });
+    if (result.canceled || !result.filePaths[0]) {
+      return { restored: false };
+    }
+    return restoreBackup(result.filePaths[0]);
+  });
   handle("updates:check", async () => {
     const currentVersion = app.getVersion();
     if (process.env.NODE_ENV === "development") {

@@ -18,6 +18,7 @@ const api: DesktopApi = {
   bootstrap: () => invoke("app:bootstrap"),
   setupAdmin: (input: SetupAdminInput) => invoke("setup:admin", input),
   login: (input: LoginInput) => invoke("auth:login", input),
+  logout: () => invoke("auth:logout"),
   listClients: () => invoke("clients:list"),
   saveClient: (input: ClientInput & { id?: string }) => invoke("clients:save", input),
   deleteClient: (id: string) => invoke("clients:delete", id),
@@ -36,6 +37,7 @@ const api: DesktopApi = {
   saveRoute: (input: RouteDraftInput & { id?: string }) => invoke("routes:save", input),
   saveRouteBatch: (input: RouteBatchInput) => invoke("routes:save-batch", input),
   createBackup: () => invoke("backup:create"),
+  restoreBackup: () => invoke("backup:restore"),
   checkForUpdates: () => invoke("updates:check"),
   downloadAndInstallUpdate: () => invoke("updates:download-and-install")
 };

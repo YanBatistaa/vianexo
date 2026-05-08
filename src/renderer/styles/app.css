@@ -463,6 +463,71 @@ th {
   grid-column: 1 / -1;
 }
 
+.employee-pool {
+  grid-column: 1 / -1;
+  display: grid;
+  gap: 10px;
+  padding: 14px;
+  background: rgba(36, 95, 122, 0.06);
+  border: 1px dashed rgba(36, 95, 122, 0.44);
+}
+
+.employee-pool-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 8px;
+}
+
+.employee-chip,
+.draggable-passenger {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+}
+
+.employee-chip {
+  min-height: 48px;
+  padding: 8px;
+  background: #fffdf8;
+  border: 1px solid var(--line);
+}
+
+.employee-chip span,
+.draggable-passenger span {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.employee-chip small,
+.draggable-passenger small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.drag-handle {
+  width: 30px;
+  min-width: 30px;
+  height: 30px;
+  border: 1px solid var(--line);
+  background: #fffdf8;
+  color: var(--muted);
+  display: grid;
+  place-items: center;
+  padding: 0;
+  cursor: grab;
+}
+
+.drag-handle:active {
+  cursor: grabbing;
+}
+
+.dragging-preview {
+  box-shadow: var(--shadow);
+}
+
 .route-card {
   padding: 14px;
   display: grid;
@@ -471,6 +536,11 @@ th {
 
 .route-card.over {
   border-color: var(--red);
+}
+
+.route-card.drop-target {
+  border-color: var(--blue);
+  box-shadow: 0 0 0 3px rgba(36, 95, 122, 0.16);
 }
 
 .route-card header {
@@ -502,6 +572,12 @@ th {
   padding: 8px;
 }
 
+.route-card li.empty-drop {
+  justify-content: center;
+  color: var(--muted);
+  border-style: dashed;
+}
+
 .route-card li button {
   border: 0;
   background: transparent;
@@ -509,9 +585,24 @@ th {
   font-weight: 800;
 }
 
-.route-card li span {
+.passenger-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: auto;
+}
+
+.passenger-actions button {
+  min-width: 26px;
+  height: 26px;
   display: grid;
-  gap: 2px;
+  place-items: center;
+  padding: 0 4px;
+}
+
+.passenger-actions button:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
 }
 
 .settings-grid {

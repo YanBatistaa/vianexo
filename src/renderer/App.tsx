@@ -2,6 +2,8 @@ import React, { useEffect, useMemo, useState } from "react";
 import { createRoot } from "react-dom/client";
 import {
   Archive,
+  ArrowDown,
+  ArrowUp,
   Bell,
   Bus,
   Check,
@@ -10,6 +12,7 @@ import {
   Edit3,
   FileSpreadsheet,
   Filter,
+  GripVertical,
   HelpCircle,
   LogOut,
   MapPinned,
@@ -25,8 +28,21 @@ import {
   Wrench,
   X
 } from "lucide-react";
+import {
+  DndContext,
+  DragOverlay,
+  KeyboardSensor,
+  PointerSensor,
+  type DragEndEvent,
+  type DragStartEvent,
+  useDraggable,
+  useDroppable,
+  useSensor,
+  useSensors
+} from "@dnd-kit/core";
+import { CSS } from "@dnd-kit/utilities";
 import * as XLSX from "xlsx";
-import { createFullPermissionMatrix, createViewOnlyPermissionMatrix } from "../shared/permissions";
+import { createFullPermissionMatrix, createViewOnlyPermissionMatrix, hasPermission } from "../shared/permissions";
 import type {
   EmployeeImportRow,
   PermissionMatrix,
@@ -67,6 +83,7 @@ function useAsyncData<T>(loader: () => Promise<T>, deps: React.DependencyList, f
     setLoading(true);
     loader()
       .then((result) => mounted && setData(result))
+      .catch(() => mounted && setData(fallback))
       .finally(() => mounted && setLoading(false));
     return () => {
       mounted = false;
@@ -79,8 +96,7 @@ function useAsyncData<T>(loader: () => Promise<T>, deps: React.DependencyList, f
 }
 
 function can(user: SessionUser, module: string, action: string) {
-  if (!user.permissions || user.permissions.length === 0) return true;
-  return user.permissions.some((permission: any) => permission.module === module && permission.action === action && permission.allowed);
+  return hasPermission(user.permissions, module as any, action as any);
 }
 
 function matchesSearch(value: unknown, search: string) {
@@ -155,7 +171,7 @@ function LoginScreen({ onLogin }: { onLogin: (user: SessionUser) => void }) {
   );
 }
 
-function Shell({ user, onLogout }: { user: SessionUser; onLogout: () => void }) {
+function Shell({ user, onLogout }: { user: SessionUser; onLogout: () => void | Promise<void> }) {
   const [active, setActive] = useState<ModuleKey>("dashboard");
   const [refreshKey, setRefreshKey] = useState(0);
   const [updateState, setUpdateState] = useState<UpdateCheckResult | null>(null);
@@ -293,7 +309,7 @@ function Dashboard(context: any) {
         eyebrow="Visao geral"
         title="Operacao do dia sob controle"
         help="Use o painel para enxergar rapidamente clientes, funcionarios importados, frota e roteiros recentes."
-        action={<BackupButton />}
+        action={<BackupButton user={context.user} />}
       />
       <section className="metric-grid">
         <Metric label="Clientes" value={context.clients.length} tone="ink" />
@@ -340,8 +356,9 @@ function Metric({ label, value, tone }: { label: string; value: number; tone: st
   );
 }
 
-function BackupButton() {
+function BackupButton({ user }: { user: SessionUser }) {
   const [message, setMessage] = useState("");
+  if (!can(user, "settings", "create")) return null;
   return (
     <div className="inline-action">
       {message && <span>{message}</span>}
@@ -497,22 +514,53 @@ function EmployeesModule({ employees, clients }: any) {
   );
 }
 
-function ImportsModule({ clients, refresh, user, notify }: any) {
+function ImportsModule({ clients, employees, refresh, user, notify }: any) {
   const [clientId, setClientId] = useState("");
   const [rows, setRows] = useState<Record<string, unknown>[]>([]);
   const [fileName, setFileName] = useState("modelo-manual.xlsx");
   const [map, setMap] = useState<Record<string, string>>({});
   const columns = Object.keys(rows[0] ?? {});
+  const templateKey = clientId ? `vianexo:import-map:${clientId}` : "";
   const validation = useMemo(() => {
-    const missingNameRows = rows
-      .map((row, index) => ({ index: index + 1, value: String(row[map.name] ?? "").trim() }))
-      .filter((row) => !row.value)
-      .map((row) => row.index);
+    const normalizedName = (value: unknown) => String(value ?? "").trim().replace(/\s+/g, " ").toLowerCase();
+    const existingNames = new Set(
+      employees
+        .filter((employee: any) => employee.clientId === clientId)
+        .map((employee: any) => normalizedName(employee.name))
+        .filter(Boolean)
+    );
+    const names = rows.map((row) => normalizedName(row[map.name]));
+    const counts = names.reduce((acc, name) => {
+      if (name) acc.set(name, (acc.get(name) ?? 0) + 1);
+      return acc;
+    }, new Map<string, number>());
+    const missingNameRows: number[] = [];
+    const duplicateRows: number[] = [];
+    const existingRows: number[] = [];
+    names.forEach((name, index) => {
+      if (!name) {
+        missingNameRows.push(index + 1);
+        return;
+      }
+      if ((counts.get(name) ?? 0) > 1) duplicateRows.push(index + 1);
+      if (existingNames.has(name)) existingRows.push(index + 1);
+    });
+    const blockedRows = new Set([...missingNameRows, ...duplicateRows, ...existingRows]);
     return {
-      validRows: rows.length - missingNameRows.length,
-      missingNameRows
+      validRows: rows.length - blockedRows.size,
+      missingNameRows,
+      duplicateRows,
+      existingRows
     };
-  }, [rows, map.name]);
+  }, [rows, map.name, employees, clientId]);
+
+  useEffect(() => {
+    if (!templateKey) return;
+    const saved = window.localStorage.getItem(templateKey);
+    if (saved) {
+      setMap(JSON.parse(saved));
+    }
+  }, [templateKey]);
 
   async function handleFile(file?: File) {
     if (!file) return;
@@ -520,8 +568,8 @@ function ImportsModule({ clients, refresh, user, notify }: any) {
     const buffer = await file.arrayBuffer();
     const workbook = XLSX.read(buffer);
     const sheet = workbook.Sheets[workbook.SheetNames[0]];
-    const json = XLSX.utils.sheet_to_json<Record<string, unknown>>(sheet);
-    setRows(json.slice(0, 200));
+    const json = XLSX.utils.sheet_to_json<Record<string, unknown>>(sheet, { defval: "", raw: false });
+    setRows(json);
   }
 
   function seedRows() {
@@ -533,24 +581,36 @@ function ImportsModule({ clients, refresh, user, notify }: any) {
   }
 
   async function importNow() {
-    const payloadRows: EmployeeImportRow[] = rows.map((row) => {
+    const blockedRows = new Set([
+      ...validation.missingNameRows,
+      ...validation.duplicateRows,
+      ...validation.existingRows
+    ]);
+    const payloadRows: EmployeeImportRow[] = rows.map((row, index) => {
+      if (blockedRows.has(index + 1)) return null;
       const used = new Set(Object.values(map));
       const extraData = Object.fromEntries(Object.entries(row).filter(([key]) => !used.has(key)));
       return {
-        name: String(row[map.name] ?? ""),
-        address: map.address ? String(row[map.address] ?? "") : undefined,
-        destination: map.destination ? String(row[map.destination] ?? "") : undefined,
-        phone: map.phone ? String(row[map.phone] ?? "") : undefined,
-        notes: map.notes ? String(row[map.notes] ?? "") : undefined,
+        name: String(row[map.name] ?? "").trim(),
+        address: map.address ? String(row[map.address] ?? "").trim() : undefined,
+        destination: map.destination ? String(row[map.destination] ?? "").trim() : undefined,
+        phone: map.phone ? String(row[map.phone] ?? "").trim() : undefined,
+        notes: map.notes ? String(row[map.notes] ?? "").trim() : undefined,
         extraData
       };
-    }).filter((row) => row.name);
+    }).filter(Boolean) as EmployeeImportRow[];
 
     await api.importEmployees({ clientId, fileName, columnMap: map, rows: payloadRows, rawPreview: rows.slice(0, 5) });
     setRows([]);
     setMap({});
     refresh();
     notify(`${payloadRows.length} funcionarios importados.`);
+  }
+
+  function saveTemplate() {
+    if (!templateKey) return;
+    window.localStorage.setItem(templateKey, JSON.stringify(map));
+    notify("Template de mapeamento salvo para este cliente.");
   }
 
   return (
@@ -584,10 +644,15 @@ function ImportsModule({ clients, refresh, user, notify }: any) {
               </select>
             </label>
           ))}
-          {rows.length > 0 && <div className={validation.missingNameRows.length ? "validation-card error" : "validation-card"}>
+          {rows.length > 0 && <div className={validation.missingNameRows.length || validation.duplicateRows.length || validation.existingRows.length ? "validation-card error" : "validation-card"}>
             <strong>{validation.validRows} linhas validas</strong>
             {validation.missingNameRows.length > 0 && <span>Linhas sem nome ignoradas: {validation.missingNameRows.slice(0, 8).join(", ")}</span>}
+            {validation.duplicateRows.length > 0 && <span>Duplicados na planilha ignorados: {validation.duplicateRows.slice(0, 8).join(", ")}</span>}
+            {validation.existingRows.length > 0 && <span>Ja cadastrados para o cliente ignorados: {validation.existingRows.slice(0, 8).join(", ")}</span>}
           </div>}
+          <button className="secondary-button" disabled={!clientId || !map.name} onClick={saveTemplate}>
+            <Save size={17} /> Salvar template
+          </button>
           <button className="primary-button" disabled={!can(user, "imports", "create") || !clientId || !map.name || rows.length === 0 || validation.validRows === 0} onClick={importNow}>
             <Save size={17} /> Importar {rows.length || ""} linhas
           </button>
@@ -608,15 +673,115 @@ type RouteCard = {
   status: "DRAFT" | "FINAL";
 };
 
+type EmployeeDragData = {
+  employeeId: string;
+  fromCardId?: string;
+};
+
+function EmployeeDragItem({ id, employee, fromCardId, children, className = "" }: {
+  id: string;
+  employee: any;
+  fromCardId?: string;
+  children: (props: { attributes: any; listeners: any; isDragging: boolean }) => React.ReactNode;
+  className?: string;
+}) {
+  const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({
+    id,
+    data: { employeeId: employee.id, fromCardId } satisfies EmployeeDragData
+  });
+  const style = {
+    transform: CSS.Translate.toString(transform),
+    opacity: isDragging ? 0.55 : 1
+  };
+
+  return (
+    <div ref={setNodeRef} style={style} className={className}>
+      {children({ attributes, listeners, isDragging })}
+    </div>
+  );
+}
+
+function RouteDropCard({ card, vehicle, drivers, employees, over, updateCard, removeCard, duplicateCard, moveEmployee, removeEmployee }: {
+  card: RouteCard;
+  vehicle: any;
+  drivers: any[];
+  employees: any[];
+  over: boolean;
+  updateCard: (instanceId: string, updater: (card: RouteCard) => RouteCard) => void;
+  removeCard: (instanceId: string) => void;
+  duplicateCard: (card: RouteCard) => void;
+  moveEmployee: (instanceId: string, employeeId: string, direction: -1 | 1) => void;
+  removeEmployee: (instanceId: string, employeeId: string) => void;
+}) {
+  const { isOver, setNodeRef } = useDroppable({
+    id: `route-card:${card.instanceId}`,
+    data: { cardId: card.instanceId }
+  });
+
+  return (
+    <article ref={setNodeRef} className={`route-card ${over ? "over" : ""} ${isOver ? "drop-target" : ""}`}>
+      <header>
+        <input value={card.name} onChange={(event) => updateCard(card.instanceId, (current) => ({ ...current, name: event.target.value }))} />
+        <span>{card.employeeIds.length}/{vehicle?.capacity ?? 0}</span>
+      </header>
+      <label>
+        Motorista
+        <select value={card.driverId ?? ""} onChange={(event) => updateCard(card.instanceId, (current) => ({ ...current, driverId: event.target.value }))}>
+          <option value="">Sem motorista</option>
+          {drivers.map((driver: any) => <option key={driver.id} value={driver.id}>{driver.name}</option>)}
+        </select>
+      </label>
+      <ul aria-label={`Passageiros de ${card.name}`}>
+        {card.employeeIds.length === 0 && <li className="empty-drop">Solte funcionarios aqui</li>}
+        {card.employeeIds.map((id, index) => {
+          const employee = employees.find((item: any) => item.id === id);
+          if (!employee) return null;
+          return (
+            <li key={id}>
+              <EmployeeDragItem id={`assigned:${card.instanceId}:${id}`} employee={employee} fromCardId={card.instanceId} className="draggable-passenger">
+                {({ attributes, listeners }) => (
+                  <>
+                    <button className="drag-handle" type="button" title="Arrastar passageiro" aria-label={`Arrastar ${employee.name}`} {...attributes} {...listeners}>
+                      <GripVertical size={16} />
+                    </button>
+                    <span>{employee.name}<small>{employee.client?.name}</small></span>
+                    <div className="passenger-actions">
+                      <button type="button" title="Subir" disabled={index === 0} onClick={() => moveEmployee(card.instanceId, id, -1)}><ArrowUp size={14} /></button>
+                      <button type="button" title="Descer" disabled={index === card.employeeIds.length - 1} onClick={() => moveEmployee(card.instanceId, id, 1)}><ArrowDown size={14} /></button>
+                      <button type="button" onClick={() => removeEmployee(card.instanceId, id)}>remover</button>
+                    </div>
+                  </>
+                )}
+              </EmployeeDragItem>
+            </li>
+          );
+        })}
+      </ul>
+      <button className="secondary-button" onClick={() => removeCard(card.instanceId)}>
+        <X size={17} /> Remover card
+      </button>
+      <button className="secondary-button" onClick={() => duplicateCard(card)}>
+        <Plus size={17} /> Duplicar card
+      </button>
+    </article>
+  );
+}
+
 function RoutesModule({ clients, employees, vehicles, drivers, routes, refresh, user, notify }: any) {
   const [clientId, setClientId] = useState("");
   const [date, setDate] = useState(new Date().toISOString().slice(0, 10));
   const [cards, setCards] = useState<RouteCard[]>([]);
   const [employeeSearch, setEmployeeSearch] = useState("");
   const [historySearch, setHistorySearch] = useState("");
+  const [activeEmployeeId, setActiveEmployeeId] = useState<string | null>(null);
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 8 } }),
+    useSensor(KeyboardSensor)
+  );
   const filteredEmployees = (clientId ? employees.filter((employee: any) => employee.clientId === clientId) : employees).filter((employee: any) => matchesSearch(employee, employeeSearch));
   const selectedEmployeeIds = useMemo(() => new Set(cards.flatMap((card) => card.employeeIds)), [cards]);
   const availableEmployees = filteredEmployees.filter((employee: any) => !selectedEmployeeIds.has(employee.id));
+  const activeEmployee = employees.find((employee: any) => employee.id === activeEmployeeId);
 
   function addVehicleCard(vehicle: any) {
     const count = cards.filter((card) => card.vehicleId === vehicle.id).length + 1;
@@ -632,6 +797,24 @@ function RoutesModule({ clients, employees, vehicles, drivers, routes, refresh, 
 
   function updateCard(instanceId: string, updater: (card: RouteCard) => RouteCard) {
     setCards(cards.map((card) => card.instanceId === instanceId ? updater(card) : card));
+  }
+
+  function removeEmployee(instanceId: string, employeeId: string) {
+    updateCard(instanceId, (current) => ({ ...current, employeeIds: current.employeeIds.filter((id) => id !== employeeId) }));
+  }
+
+  function moveEmployee(instanceId: string, employeeId: string, direction: -1 | 1) {
+    updateCard(instanceId, (current) => {
+      const index = current.employeeIds.indexOf(employeeId);
+      const nextIndex = index + direction;
+      if (index < 0 || nextIndex < 0 || nextIndex >= current.employeeIds.length) {
+        return current;
+      }
+      const employeeIds = [...current.employeeIds];
+      const [moved] = employeeIds.splice(index, 1);
+      employeeIds.splice(nextIndex, 0, moved);
+      return { ...current, employeeIds };
+    });
   }
 
   function duplicateCard(card: RouteCard) {
@@ -662,6 +845,33 @@ function RoutesModule({ clients, employees, vehicles, drivers, routes, refresh, 
       employeeIds: routeVehicle.passengers?.map((item: any) => item.employeeId) ?? [],
       status: route.status
     }]);
+  }
+
+  function handleDragStart(event: DragStartEvent) {
+    const data = event.active.data.current as EmployeeDragData | undefined;
+    setActiveEmployeeId(data?.employeeId ?? null);
+  }
+
+  function handleDragEnd(event: DragEndEvent) {
+    const data = event.active.data.current as EmployeeDragData | undefined;
+    const targetCardId = event.over?.data.current?.cardId as string | undefined;
+    setActiveEmployeeId(null);
+    if (!data || !targetCardId) return;
+
+    setCards((currentCards) => {
+      const withoutEmployee = currentCards.map((card) => (
+        data.fromCardId
+          ? { ...card, employeeIds: card.employeeIds.filter((id) => id !== data.employeeId) }
+          : card
+      ));
+
+      return withoutEmployee.map((card) => {
+        if (card.instanceId !== targetCardId || card.employeeIds.includes(data.employeeId)) {
+          return card;
+        }
+        return { ...card, employeeIds: [...card.employeeIds, data.employeeId] };
+      });
+    });
   }
 
   async function saveBatch(status: "DRAFT" | "FINAL") {
@@ -714,51 +924,53 @@ function RoutesModule({ clients, employees, vehicles, drivers, routes, refresh, 
             <FileSpreadsheet size={17} /> Imprimir lista
           </button>
         </div>
-        <div className="route-groups">
-          <div className="route-search">
-            <SearchBar value={employeeSearch} onChange={setEmployeeSearch} placeholder="Buscar funcionario para alocar" />
+        <DndContext sensors={sensors} onDragStart={handleDragStart} onDragEnd={handleDragEnd}>
+          <div className="route-groups">
+            <div className="route-search">
+              <SearchBar value={employeeSearch} onChange={setEmployeeSearch} placeholder="Buscar funcionario para alocar" />
+            </div>
+            <section className="employee-pool" aria-label="Funcionarios disponiveis">
+              <h3>Funcionarios disponiveis</h3>
+              <div className="employee-pool-list">
+                {availableEmployees.slice(0, 80).map((employee: any) => (
+                  <EmployeeDragItem key={employee.id} id={`available:${employee.id}`} employee={employee} className="employee-chip">
+                    {({ attributes, listeners }) => (
+                      <>
+                        <button type="button" className="drag-handle" title="Arrastar funcionario" aria-label={`Arrastar ${employee.name}`} {...attributes} {...listeners}>
+                          <GripVertical size={15} />
+                        </button>
+                        <span>{employee.name}<small>{employee.client?.name} - {employee.address ?? "sem endereco"}</small></span>
+                      </>
+                    )}
+                  </EmployeeDragItem>
+                ))}
+                {availableEmployees.length === 0 && <p className="muted-copy">Nenhum funcionario disponivel para os filtros atuais.</p>}
+              </div>
+            </section>
+            {cards.map((card) => {
+              const vehicle = vehicles.find((item: any) => item.id === card.vehicleId);
+              const over = card.employeeIds.length > Number(vehicle?.capacity ?? 0);
+              return (
+                <RouteDropCard
+                  key={card.instanceId}
+                  card={card}
+                  vehicle={vehicle}
+                  drivers={drivers}
+                  employees={employees}
+                  over={over}
+                  updateCard={updateCard}
+                  removeCard={(instanceId) => setCards(cards.filter((item) => item.instanceId !== instanceId))}
+                  duplicateCard={duplicateCard}
+                  moveEmployee={moveEmployee}
+                  removeEmployee={removeEmployee}
+                />
+              );
+            })}
           </div>
-          {cards.map((card) => {
-            const vehicle = vehicles.find((item: any) => item.id === card.vehicleId);
-            const over = card.employeeIds.length > Number(vehicle?.capacity ?? 0);
-            return (
-              <article key={card.instanceId} className={`route-card ${over ? "over" : ""}`}>
-                <header>
-                  <input value={card.name} onChange={(event) => updateCard(card.instanceId, (current) => ({ ...current, name: event.target.value }))} />
-                  <span>{card.employeeIds.length}/{vehicle?.capacity ?? 0}</span>
-                </header>
-                <label>
-                  Motorista
-                  <select value={card.driverId ?? ""} onChange={(event) => updateCard(card.instanceId, (current) => ({ ...current, driverId: event.target.value }))}>
-                    <option value="">Sem motorista</option>
-                    {drivers.map((driver: any) => <option key={driver.id} value={driver.id}>{driver.name}</option>)}
-                  </select>
-                </label>
-                <select value="" onChange={(event) => event.target.value && updateCard(card.instanceId, (current) => ({ ...current, employeeIds: [...current.employeeIds, event.target.value] }))}>
-                  <option value="">Adicionar funcionario</option>
-                  {availableEmployees.map((employee: any) => <option key={employee.id} value={employee.id}>{employee.name} - {employee.client?.name} - {employee.address ?? "sem endereco"}</option>)}
-                </select>
-                <ul>
-                  {card.employeeIds.map((id) => {
-                    const employee = employees.find((item: any) => item.id === id);
-                    return (
-                      <li key={id}>
-                        <span>{employee?.name}<small>{employee?.client?.name}</small></span>
-                        <button onClick={() => updateCard(card.instanceId, (current) => ({ ...current, employeeIds: current.employeeIds.filter((item) => item !== id) }))}>remover</button>
-                      </li>
-                    );
-                  })}
-                </ul>
-                <button className="secondary-button" onClick={() => setCards(cards.filter((item) => item.instanceId !== card.instanceId))}>
-                  <X size={17} /> Remover card
-                </button>
-                <button className="secondary-button" onClick={() => duplicateCard(card)}>
-                  <Plus size={17} /> Duplicar card
-                </button>
-              </article>
-            );
-          })}
-        </div>
+          <DragOverlay>
+            {activeEmployee && <div className="employee-chip dragging-preview"><span>{activeEmployee.name}<small>{activeEmployee.client?.name}</small></span></div>}
+          </DragOverlay>
+        </DndContext>
       </section>
       <section className="data-section route-history">
         <h3>Rotas salvas</h3>
@@ -813,9 +1025,10 @@ function UsersModule({ users, refresh, user, notify }: any) {
   );
 }
 
-function SettingsModule({ user, showUpdate, onLogout }: any) {
+function SettingsModule({ user, showUpdate, onLogout, refresh, notify }: any) {
   const [updateMessage, setUpdateMessage] = useState("");
   const [checking, setChecking] = useState(false);
+  const [restoring, setRestoring] = useState(false);
 
   async function checkUpdates() {
     setChecking(true);
@@ -837,6 +1050,24 @@ function SettingsModule({ user, showUpdate, onLogout }: any) {
     setUpdateMessage("Voce ja esta usando a versao mais recente.");
   }
 
+  async function restoreBackup() {
+    if (!window.confirm("Restaurar um backup vai substituir o banco local atual. Uma copia de seguranca sera criada antes da troca. Deseja continuar?")) {
+      return;
+    }
+    setRestoring(true);
+    try {
+      const result = await api.restoreBackup();
+      if (result.restored) {
+        refresh();
+        notify("Backup restaurado com sucesso.");
+      }
+    } catch (error) {
+      notify(error instanceof Error ? error.message : "Nao foi possivel restaurar o backup.", "error");
+    } finally {
+      setRestoring(false);
+    }
+  }
+
   return (
     <>
       <PageHeader eyebrow="Preferencias" title="Configuracoes" help="Aqui ficam acoes de conta, atualizacao manual e manutencao local do app." />
@@ -844,7 +1075,7 @@ function SettingsModule({ user, showUpdate, onLogout }: any) {
         <div className="panel">
           <h3>Conta</h3>
           <p className="muted-copy">Usuario atual: <strong>{user.name}</strong></p>
-          <button className="secondary-button danger" onClick={onLogout}><LogOut size={17} /> Sair da conta</button>
+          <button className="secondary-button danger" onClick={() => onLogout()}><LogOut size={17} /> Sair da conta</button>
         </div>
         <div className="panel">
           <h3>Atualizacoes</h3>
@@ -857,6 +1088,13 @@ function SettingsModule({ user, showUpdate, onLogout }: any) {
         <div className="panel">
           <h3>Ajuda no app</h3>
           <p className="muted-copy">Os icones de interrogacao ao lado dos titulos explicam o uso de cada tela e reduzem a necessidade de treinamento externo.</p>
+        </div>
+        <div className="panel">
+          <h3>Backup e restauracao</h3>
+          <p className="muted-copy">Restaure um arquivo `.db` gerado pelo ViaNexo. O app cria uma copia do banco atual antes de substituir os dados.</p>
+          <button className="secondary-button danger" onClick={restoreBackup} disabled={restoring || !can(user, "settings", "edit")}>
+            <DatabaseBackup size={17} /> {restoring ? "Restaurando..." : "Restaurar backup"}
+          </button>
         </div>
       </section>
     </>
@@ -985,7 +1223,10 @@ function App() {
     return <LoginScreen onLogin={setUser} />;
   }
 
-  return <Shell user={user} onLogout={() => setUser(null)} />;
+  return <Shell user={user} onLogout={async () => {
+    await api.logout();
+    setUser(null);
+  }} />;
 }
 
 createRoot(document.getElementById("root")!).render(<App />);

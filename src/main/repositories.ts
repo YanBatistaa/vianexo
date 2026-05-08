@@ -2,7 +2,7 @@ import bcrypt from "bcryptjs";
 import fs from "node:fs";
 import path from "node:path";
 import { app } from "electron";
-import { ensureDatabaseSchema, getDatabasePath, getPrisma } from "./db";
+import { disconnectPrisma, ensureDatabaseSchema, getDatabasePath, getPrisma } from "./db";
 import { createFullPermissionMatrix } from "../shared/permissions";
 import type { PermissionMatrix } from "../shared/contracts";
 
@@ -16,6 +16,24 @@ function permissionRows(userId: string, permissions: PermissionMatrix) {
   return Object.entries(permissions).flatMap(([module, moduleActions]) =>
     Object.entries(moduleActions).map(([action, allowed]) => ({ userId, module, action, allowed }))
   );
+}
+
+function assertKeepsCriticalSelfAccess(input: any) {
+  if (input.status === "INACTIVE") {
+    throw new Error("Voce nao pode desativar o proprio usuario.");
+  }
+
+  if (!input.permissions) return;
+  const permissions = input.permissions as PermissionMatrix;
+  const required = [
+    permissions.users?.view,
+    permissions.users?.edit,
+    permissions.users?.delete,
+    permissions.settings?.edit
+  ];
+  if (required.some((allowed) => allowed !== true)) {
+    throw new Error("Voce nao pode remover suas proprias permissoes criticas.");
+  }
 }
 
 export async function bootstrap() {
@@ -76,6 +94,13 @@ export async function login(input: { email: string; password: string }) {
     email: user.email,
     permissions: user.permissions
   };
+}
+
+export async function getUserAccessState(userId: string) {
+  return getPrisma().user.findUnique({
+    where: { id: userId },
+    select: { status: true, permissions: true }
+  });
 }
 
 export async function listClients() {
@@ -185,8 +210,17 @@ export async function listUsers() {
   });
 }
 
-export async function saveUser(input: any) {
+export async function saveUser(input: any, actorUserId?: string) {
   const prisma = getPrisma();
+  if (input.id && input.id === actorUserId) {
+    assertKeepsCriticalSelfAccess(input);
+  }
+  if (input.id && input.status === "INACTIVE") {
+    const activeUsers = await prisma.user.count({ where: { status: "ACTIVE", id: { not: input.id } } });
+    if (activeUsers === 0) {
+      throw new Error("Mantenha pelo menos um usuario ativo no sistema.");
+    }
+  }
   const data: any = clean({ name: input.name, email: input.email, status: input.status ?? "ACTIVE" });
   if (input.password) {
     data.passwordHash = await bcrypt.hash(input.password, 10);
@@ -209,8 +243,16 @@ export async function saveUser(input: any) {
   });
 }
 
-export async function deleteUser(id: string) {
-  await getPrisma().user.delete({ where: { id } });
+export async function deleteUser(id: string, actorUserId?: string) {
+  if (id === actorUserId) {
+    throw new Error("Voce nao pode excluir o proprio usuario.");
+  }
+  const prisma = getPrisma();
+  const activeUsers = await prisma.user.count({ where: { status: "ACTIVE", id: { not: id } } });
+  if (activeUsers === 0) {
+    throw new Error("Mantenha pelo menos um usuario ativo no sistema.");
+  }
+  await prisma.user.delete({ where: { id } });
   return true;
 }
 
@@ -359,4 +401,29 @@ export async function createBackup() {
     fs.writeFileSync(filePath, "");
   }
   return { filePath, createdAt: new Date().toISOString() };
+}
+
+export async function restoreBackup(backupPath: string) {
+  if (!backupPath || path.extname(backupPath).toLowerCase() !== ".db" || !fs.existsSync(backupPath)) {
+    throw new Error("Selecione um backup SQLite valido.");
+  }
+
+  const dbPath = getDatabasePath();
+  const backupDir = path.join(app.getPath("documents"), "Sistema Vans Backups");
+  fs.mkdirSync(backupDir, { recursive: true });
+  const safetyCopyPath = path.join(backupDir, `antes-da-restauracao-${new Date().toISOString().replace(/[:.]/g, "-")}.db`);
+
+  await disconnectPrisma();
+  if (fs.existsSync(dbPath)) {
+    fs.copyFileSync(dbPath, safetyCopyPath);
+  }
+  fs.copyFileSync(backupPath, dbPath);
+  await ensureDatabaseSchema();
+
+  return {
+    restored: true,
+    restoredFrom: backupPath,
+    safetyCopyPath,
+    restoredAt: new Date().toISOString()
+  };
 }
