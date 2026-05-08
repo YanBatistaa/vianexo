@@ -64,9 +64,22 @@ model Client {
   notes     String?
   employees Employee[]
   imports   ImportJob[]
+  importTemplates ImportTemplate[]
   routes    Route[]
   createdAt DateTime   @default(now())
   updatedAt DateTime   @updatedAt
+}
+
+model ImportTemplate {
+  id        String   @id @default(cuid())
+  clientId  String
+  name      String
+  columnMap String   @default("{}")
+  client    Client   @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([clientId, name])
 }
 
 model Employee {

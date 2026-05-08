@@ -84,6 +84,13 @@ export type ImportPayload = {
   columnMap: Record<string, string>;
   rows: EmployeeImportRow[];
   rawPreview?: Record<string, unknown>[];
+  updateExisting?: boolean;
+};
+
+export type ImportTemplateInput = {
+  clientId: string;
+  name: string;
+  columnMap: Record<string, string>;
 };
 
 export type RouteDraftVehicle = {
@@ -162,6 +169,8 @@ export type DesktopApi = {
   deleteUser(id: string): ApiResult<boolean>;
   listEmployees(clientId?: string): ApiResult<any[]>;
   importEmployees(payload: ImportPayload): ApiResult<{ importJob: any; employees: any[] }>;
+  listImportTemplates(clientId: string): ApiResult<any[]>;
+  saveImportTemplate(input: ImportTemplateInput): ApiResult<any>;
   listRoutes(): ApiResult<any[]>;
   saveRoute(input: RouteDraftInput & { id?: string }): ApiResult<any>;
   saveRouteBatch(input: RouteBatchInput): ApiResult<any[]>;

@@ -10,6 +10,7 @@ import {
   deleteVehicle,
   getUserAccessState,
   importEmployees,
+  listImportTemplates,
   listClients,
   listDrivers,
   listEmployees,
@@ -18,6 +19,7 @@ import {
   listVehicles,
   saveClient,
   saveDriver,
+  saveImportTemplate,
   saveRoute,
   saveRouteBatch,
   saveUser,
@@ -32,6 +34,7 @@ import {
   clientSchema,
   driverSchema,
   importSchema,
+  importTemplateSchema,
   loginSchema,
   routeBatchSchema,
   routeSchema,
@@ -144,6 +147,8 @@ export function registerIpcHandlers() {
 
   protectedHandle("employees:list", "employees", "view", (clientId?: string) => listEmployees(clientId));
   protectedHandle("employees:import", "imports", "create", (input) => importEmployees(importSchema.parse(input)));
+  protectedHandle("imports:templates:list", "imports", "view", (clientId: string) => listImportTemplates(clientId));
+  protectedHandle("imports:templates:save", "imports", "create", (input) => saveImportTemplate(importTemplateSchema.parse(input)));
 
   protectedHandle("routes:list", "routes", "view", () => listRoutes());
   protectedHandle("routes:save", "routes", (input: any) => input?.id ? "edit" : "create", (input) => saveRoute(routeSchema.parse(input)));

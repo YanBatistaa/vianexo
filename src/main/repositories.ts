@@ -266,6 +266,7 @@ export async function listEmployees(clientId?: string) {
 
 export async function importEmployees(input: any) {
   const prisma = getPrisma();
+  const normalize = (value: string) => value.trim().replace(/\s+/g, " ").toLowerCase();
   return prisma.$transaction(async (tx) => {
     const importJob = await tx.importJob.create({
       data: {
@@ -279,21 +280,64 @@ export async function importEmployees(input: any) {
     });
 
     const employees = [];
+    const existingEmployees = input.updateExisting
+      ? await tx.employee.findMany({ where: { clientId: input.clientId } })
+      : [];
+    const existingByName = new Map(existingEmployees.map((employee) => [normalize(employee.name), employee]));
+
     for (const row of input.rows) {
-      employees.push(await tx.employee.create({
-        data: {
-          clientId: input.clientId,
-          name: row.name,
-          address: row.address,
-          destination: row.destination,
-          phone: row.phone,
-          notes: row.notes,
-          extraData: JSON.stringify(row.extraData ?? {})
-        }
-      }));
+      const data = {
+        clientId: input.clientId,
+        name: row.name,
+        address: row.address,
+        destination: row.destination,
+        phone: row.phone,
+        notes: row.notes,
+        extraData: JSON.stringify(row.extraData ?? {})
+      };
+      const existing = input.updateExisting ? existingByName.get(normalize(row.name)) : undefined;
+      if (existing) {
+        employees.push(await tx.employee.update({
+          where: { id: existing.id },
+          data: {
+            name: data.name,
+            address: data.address,
+            destination: data.destination,
+            phone: data.phone,
+            notes: data.notes,
+            extraData: data.extraData
+          }
+        }));
+      } else {
+        employees.push(await tx.employee.create({
+          data: {
+            ...data,
+            clientId: input.clientId
+          }
+        }));
+      }
     }
 
     return { importJob, employees };
+  });
+}
+
+export async function listImportTemplates(clientId: string) {
+  return getPrisma().importTemplate.findMany({
+    where: { clientId },
+    orderBy: { updatedAt: "desc" }
+  });
+}
+
+export async function saveImportTemplate(input: any) {
+  return getPrisma().importTemplate.upsert({
+    where: { clientId_name: { clientId: input.clientId, name: input.name } },
+    update: { columnMap: JSON.stringify(input.columnMap) },
+    create: {
+      clientId: input.clientId,
+      name: input.name,
+      columnMap: JSON.stringify(input.columnMap)
+    }
   });
 }
 

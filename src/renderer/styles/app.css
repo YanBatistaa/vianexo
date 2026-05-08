@@ -102,6 +102,19 @@ label {
   font-weight: 700;
 }
 
+.check-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--ink);
+}
+
+.check-row input {
+  min-height: auto;
+  width: 16px;
+  height: 16px;
+}
+
 input,
 select {
   min-height: 40px;

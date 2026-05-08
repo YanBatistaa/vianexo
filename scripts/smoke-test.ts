@@ -15,9 +15,17 @@ const permissionData = Object.entries(createFullPermissionMatrix()).flatMap(([mo
 );
 
 async function main() {
-  const migration = fs.readFileSync(path.resolve("prisma/migrations/202605080001_init/migration.sql"), "utf8");
-  for (const statement of migration.split(";").map((item) => item.trim()).filter(Boolean)) {
-    await prisma.$executeRawUnsafe(statement);
+  const migrationsDir = path.resolve("prisma/migrations");
+  const migrationFiles = fs.readdirSync(migrationsDir)
+    .sort()
+    .map((folder) => path.join(migrationsDir, folder, "migration.sql"))
+    .filter((file) => fs.existsSync(file));
+
+  for (const file of migrationFiles) {
+    const migration = fs.readFileSync(file, "utf8");
+    for (const statement of migration.split(";").map((item) => item.trim()).filter(Boolean)) {
+      await prisma.$executeRawUnsafe(statement);
+    }
   }
 
   await prisma.routePassenger.deleteMany();

@@ -554,8 +554,10 @@ function ImportsModule({ clients, employees, refresh, user, notify }: any) {
   const [rows, setRows] = useState<Record<string, unknown>[]>([]);
   const [fileName, setFileName] = useState("modelo-manual.xlsx");
   const [map, setMap] = useState<Record<string, string>>({});
+  const [templates, setTemplates] = useState<any[]>([]);
+  const [templateName, setTemplateName] = useState("Padrao");
+  const [updateExisting, setUpdateExisting] = useState(false);
   const columns = Object.keys(rows[0] ?? {});
-  const templateKey = clientId ? `vianexo:import-map:${clientId}` : "";
   const validation = useMemo(() => {
     const normalizedName = (value: unknown) => String(value ?? "").trim().replace(/\s+/g, " ").toLowerCase();
     const existingNames = new Set(
@@ -580,22 +582,22 @@ function ImportsModule({ clients, employees, refresh, user, notify }: any) {
       if ((counts.get(name) ?? 0) > 1) duplicateRows.push(index + 1);
       if (existingNames.has(name)) existingRows.push(index + 1);
     });
-    const blockedRows = new Set([...missingNameRows, ...duplicateRows, ...existingRows]);
+    const blockedRows = new Set([...missingNameRows, ...duplicateRows, ...(updateExisting ? [] : existingRows)]);
     return {
       validRows: rows.length - blockedRows.size,
       missingNameRows,
       duplicateRows,
       existingRows
     };
-  }, [rows, map.name, employees, clientId]);
+  }, [rows, map.name, employees, clientId, updateExisting]);
 
   useEffect(() => {
-    if (!templateKey) return;
-    const saved = window.localStorage.getItem(templateKey);
-    if (saved) {
-      setMap(JSON.parse(saved));
+    if (!clientId) {
+      setTemplates([]);
+      return;
     }
-  }, [templateKey]);
+    api.listImportTemplates(clientId).then(setTemplates);
+  }, [clientId]);
 
   async function handleFile(file?: File) {
     if (!file) return;
@@ -619,7 +621,7 @@ function ImportsModule({ clients, employees, refresh, user, notify }: any) {
     const blockedRows = new Set([
       ...validation.missingNameRows,
       ...validation.duplicateRows,
-      ...validation.existingRows
+      ...(updateExisting ? [] : validation.existingRows)
     ]);
     const payloadRows: EmployeeImportRow[] = rows.map((row, index) => {
       if (blockedRows.has(index + 1)) return null;
@@ -635,7 +637,7 @@ function ImportsModule({ clients, employees, refresh, user, notify }: any) {
       };
     }).filter(Boolean) as EmployeeImportRow[];
 
-    await api.importEmployees({ clientId, fileName, columnMap: map, rows: payloadRows, rawPreview: rows.slice(0, 5) });
+    await api.importEmployees({ clientId, fileName, columnMap: map, rows: payloadRows, rawPreview: rows.slice(0, 5), updateExisting });
     setRows([]);
     setMap({});
     refresh();
@@ -643,9 +645,18 @@ function ImportsModule({ clients, employees, refresh, user, notify }: any) {
   }
 
   function saveTemplate() {
-    if (!templateKey) return;
-    window.localStorage.setItem(templateKey, JSON.stringify(map));
-    notify("Template de mapeamento salvo para este cliente.");
+    if (!clientId) return;
+    api.saveImportTemplate({ clientId, name: templateName, columnMap: map }).then(async () => {
+      setTemplates(await api.listImportTemplates(clientId));
+      notify("Template de mapeamento salvo para este cliente.");
+    });
+  }
+
+  function applyTemplate(templateId: string) {
+    const template = templates.find((item) => item.id === templateId);
+    if (!template) return;
+    setTemplateName(template.name);
+    setMap(JSON.parse(template.columnMap || "{}"));
   }
 
   return (
@@ -667,6 +678,13 @@ function ImportsModule({ clients, employees, refresh, user, notify }: any) {
             <input type="file" accept=".xlsx,.xls,.csv" onChange={(event) => handleFile(event.target.files?.[0])} />
           </label>
           <button className="secondary-button" onClick={seedRows}><FileSpreadsheet size={17} /> Usar dados simulados</button>
+          <label>
+            Template salvo
+            <select value="" disabled={!clientId || templates.length === 0} onChange={(event) => applyTemplate(event.target.value)}>
+              <option value="">Selecionar template</option>
+              {templates.map((template) => <option key={template.id} value={template.id}>{template.name}</option>)}
+            </select>
+          </label>
         </div>
         <div className="panel">
           <h3>Mapeamento</h3>
@@ -683,8 +701,16 @@ function ImportsModule({ clients, employees, refresh, user, notify }: any) {
             <strong>{validation.validRows} linhas validas</strong>
             {validation.missingNameRows.length > 0 && <span>Linhas sem nome ignoradas: {validation.missingNameRows.slice(0, 8).join(", ")}</span>}
             {validation.duplicateRows.length > 0 && <span>Duplicados na planilha ignorados: {validation.duplicateRows.slice(0, 8).join(", ")}</span>}
-            {validation.existingRows.length > 0 && <span>Ja cadastrados para o cliente ignorados: {validation.existingRows.slice(0, 8).join(", ")}</span>}
+            {validation.existingRows.length > 0 && <span>{updateExisting ? "Ja cadastrados serao atualizados" : "Ja cadastrados para o cliente ignorados"}: {validation.existingRows.slice(0, 8).join(", ")}</span>}
           </div>}
+          <label className="check-row">
+            <input type="checkbox" checked={updateExisting} onChange={(event) => setUpdateExisting(event.target.checked)} />
+            Atualizar funcionarios existentes pelo nome
+          </label>
+          <label>
+            Nome do template
+            <input value={templateName} onChange={(event) => setTemplateName(event.target.value)} />
+          </label>
           <button className="secondary-button" disabled={!clientId || !map.name} onClick={saveTemplate}>
             <Save size={17} /> Salvar template
           </button>
@@ -693,7 +719,18 @@ function ImportsModule({ clients, employees, refresh, user, notify }: any) {
           </button>
         </div>
       </section>
-      <DataSection columns={columns} rows={rows.slice(0, 8).map((row) => columns.map((column) => String(row[column] ?? "")))} />
+      <DataSection
+        columns={["Linha", "Status", ...columns]}
+        rows={rows.slice(0, 12).map((row, index) => {
+          const line = index + 1;
+          const issues = [
+            validation.missingNameRows.includes(line) ? "sem nome" : "",
+            validation.duplicateRows.includes(line) ? "duplicado" : "",
+            validation.existingRows.includes(line) ? (updateExisting ? "atualizar" : "ja cadastrado") : ""
+          ].filter(Boolean).join(", ") || "ok";
+          return [line, issues, ...columns.map((column) => String(row[column] ?? ""))];
+        })}
+      />
     </>
   );
 }

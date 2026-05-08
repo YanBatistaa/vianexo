@@ -54,6 +54,7 @@ export const importSchema = z.object({
   fileName: z.string().min(1),
   columnMap: z.record(z.string()),
   rawPreview: z.array(z.record(z.unknown())).optional(),
+  updateExisting: z.boolean().optional(),
   rows: z.array(z.object({
     name: z.string().min(1),
     address: z.string().optional(),
@@ -62,6 +63,12 @@ export const importSchema = z.object({
     notes: z.string().optional(),
     extraData: z.record(z.unknown()).optional()
   }))
+});
+
+export const importTemplateSchema = z.object({
+  clientId: z.string(),
+  name: z.string().min(2),
+  columnMap: z.record(z.string())
 });
 
 export const routeSchema = z.object({
