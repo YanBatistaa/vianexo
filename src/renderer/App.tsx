@@ -17,6 +17,7 @@ import {
   LogOut,
   MapPinned,
   Plus,
+  Printer,
   Save,
   Search,
   Settings,
@@ -46,6 +47,7 @@ import { createFullPermissionMatrix, createViewOnlyPermissionMatrix, hasPermissi
 import type {
   EmployeeImportRow,
   PermissionMatrix,
+  RouteReport,
   SessionUser,
   UpdateCheckResult
 } from "../shared/contracts";
@@ -788,6 +790,7 @@ function RoutesModule({ clients, employees, vehicles, drivers, routes, refresh, 
   const [employeeSearch, setEmployeeSearch] = useState("");
   const [historySearch, setHistorySearch] = useState("");
   const [activeEmployeeId, setActiveEmployeeId] = useState<string | null>(null);
+  const [routeReport, setRouteReport] = useState<RouteReport | null>(null);
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 8 } }),
     useSensor(KeyboardSensor)
@@ -797,6 +800,12 @@ function RoutesModule({ clients, employees, vehicles, drivers, routes, refresh, 
   const availableEmployees = filteredEmployees.filter((employee: any) => !selectedEmployeeIds.has(employee.id));
   const activeEmployee = employees.find((employee: any) => employee.id === activeEmployeeId);
   const searchedRoutes = routes.filter((route: any) => matchesSearch(routeSearchPayload(route), historySearch));
+
+  useEffect(() => {
+    if (!routeReport) return;
+    const timer = window.setTimeout(() => window.print(), 80);
+    return () => window.clearTimeout(timer);
+  }, [routeReport]);
 
   function addVehicleCard(vehicle: any) {
     const count = cards.filter((card) => card.vehicleId === vehicle.id).length + 1;
@@ -842,8 +851,40 @@ function RoutesModule({ clients, employees, vehicles, drivers, routes, refresh, 
     }]);
   }
 
+  function reportFromCards(reportCards = cards, title = "Rotas em lote", reportDate = date, version?: number): RouteReport {
+    return {
+      title,
+      client: clientId ? clients.find((client: any) => client.id === clientId)?.name : "Rotas multiclientes",
+      date: reportDate,
+      status: reportCards.some((card) => card.status === "DRAFT") ? "DRAFT" : "FINAL",
+      version,
+      cards: reportCards.map((card) => {
+        const vehicle = vehicles.find((item: any) => item.id === card.vehicleId);
+        const driver = drivers.find((item: any) => item.id === card.driverId);
+        return {
+          name: card.name,
+          vehicle: vehicle?.label,
+          plate: vehicle?.plate,
+          driver: driver?.name,
+          capacity: vehicle?.capacity,
+          passengers: card.employeeIds.map((employeeId, index) => {
+            const employee = employees.find((item: any) => item.id === employeeId);
+            return {
+              order: index + 1,
+              name: employee?.name ?? "",
+              client: employee?.client?.name,
+              address: employee?.address,
+              destination: employee?.destination,
+              phone: employee?.phone
+            };
+          })
+        };
+      })
+    };
+  }
+
   function printRoutes() {
-    window.print();
+    setRouteReport(reportFromCards());
   }
 
   function exportCardsCsv(exportCards = cards, name = `rotas-${date}`, exportDate = date) {
@@ -888,6 +929,24 @@ function RoutesModule({ clients, employees, vehicles, drivers, routes, refresh, 
       status: route.status
     })) ?? [];
     exportCardsCsv(exportCards, route.name || `rota-${exportDate}`, exportDate);
+  }
+
+  function printSavedRoute(route: any) {
+    const exportDate = new Date(route.date).toISOString().slice(0, 10);
+    const exportCards = route.vehicles?.map((routeVehicle: any, index: number) => ({
+      instanceId: `${route.id}-${routeVehicle.id}`,
+      routeId: route.id,
+      vehicleId: routeVehicle.vehicleId,
+      name: routeVehicle.groupName || route.name || `Rota ${index + 1}`,
+      driverId: routeVehicle.driverId ?? "",
+      employeeIds: routeVehicle.passengers?.map((item: any) => item.employeeId) ?? [],
+      status: route.status
+    })) ?? [];
+    setRouteReport({
+      ...reportFromCards(exportCards, route.name || `rota-${exportDate}`, exportDate, route.version),
+      client: route.client?.name,
+      status: route.status
+    });
   }
 
   function loadRoute(route: any) {
@@ -979,7 +1038,7 @@ function RoutesModule({ clients, employees, vehicles, drivers, routes, refresh, 
             <Archive size={17} /> Salvar rascunho
           </button>
           <button className="secondary-button" disabled={cards.length === 0} onClick={printRoutes}>
-            <FileSpreadsheet size={17} /> Imprimir lista
+            <Printer size={17} /> PDF/Imprimir
           </button>
           <button className="secondary-button" disabled={cards.length === 0} onClick={() => exportCardsCsv()}>
             <Download size={17} /> Exportar CSV
@@ -1037,22 +1096,80 @@ function RoutesModule({ clients, employees, vehicles, drivers, routes, refresh, 
         <h3>Rotas salvas</h3>
         <SearchBar value={historySearch} onChange={setHistorySearch} placeholder="Filtrar rotas salvas" />
         <DataTable
-          columns={["Nome", "Cliente", "Data", "Status", "Veiculo", "Atualizado", "Acoes"]}
+          columns={["Nome", "Cliente", "Data", "Status", "Versao", "Veiculo", "Atualizado", "Acoes"]}
           rows={searchedRoutes.map((route: any) => [
             route.name,
             route.client?.name ?? "-",
             new Date(route.date).toLocaleDateString("pt-BR"),
             route.status,
+            `v${route.version ?? 1}`,
             route.vehicles?.map((item: any) => item.vehicle?.label).filter(Boolean).join(", ") || "-",
             new Date(route.updatedAt ?? route.createdAt).toLocaleString("pt-BR"),
             <div className="row-actions" key={route.id}>
               {can(user, "routes", "edit") && <button className="icon-button" title="Editar rota" onClick={() => loadRoute(route)}><Edit3 size={16} /></button>}
+              <button className="icon-button" title="PDF/Imprimir rota" onClick={() => printSavedRoute(route)}><Printer size={16} /></button>
               <button className="icon-button" title="Exportar rota" onClick={() => exportSavedRoute(route)}><Download size={16} /></button>
             </div>
           ])}
         />
       </section>
+      {routeReport && <RoutePrintReport report={routeReport} />}
     </>
+  );
+}
+
+function RoutePrintReport({ report }: { report: RouteReport }) {
+  const totalPassengers = report.cards.reduce((sum, card) => sum + card.passengers.length, 0);
+  return (
+    <section className="route-print-report">
+      <header>
+        <div>
+          <span>ViaNexo</span>
+          <h1>{report.title}</h1>
+        </div>
+        <dl>
+          <div><dt>Cliente</dt><dd>{report.client ?? "-"}</dd></div>
+          <div><dt>Data</dt><dd>{new Date(report.date).toLocaleDateString("pt-BR")}</dd></div>
+          <div><dt>Status</dt><dd>{report.status ?? "-"}</dd></div>
+          <div><dt>Versao</dt><dd>v{report.version ?? 1}</dd></div>
+          <div><dt>Passageiros</dt><dd>{totalPassengers}</dd></div>
+        </dl>
+      </header>
+      {report.cards.map((card) => (
+        <article key={`${card.name}-${card.vehicle}`} className="route-print-card">
+          <div className="route-print-card-head">
+            <h2>{card.name}</h2>
+            <p>{card.vehicle ?? "-"} {card.plate ? `- ${card.plate}` : ""} | {card.driver ?? "Sem motorista"} | {card.passengers.length}/{card.capacity ?? 0}</p>
+          </div>
+          <table>
+            <thead>
+              <tr>
+                <th>Ordem</th>
+                <th>Funcionario</th>
+                <th>Cliente</th>
+                <th>Endereco</th>
+                <th>Destino</th>
+                <th>Telefone</th>
+              </tr>
+            </thead>
+            <tbody>
+              {card.passengers.length === 0 ? (
+                <tr><td colSpan={6}>Sem passageiros alocados.</td></tr>
+              ) : card.passengers.map((passenger) => (
+                <tr key={`${card.name}-${passenger.order}-${passenger.name}`}>
+                  <td>{passenger.order}</td>
+                  <td>{passenger.name}</td>
+                  <td>{passenger.client ?? "-"}</td>
+                  <td>{passenger.address ?? "-"}</td>
+                  <td>{passenger.destination ?? "-"}</td>
+                  <td>{passenger.phone ?? "-"}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </article>
+      ))}
+    </section>
   );
 }
 

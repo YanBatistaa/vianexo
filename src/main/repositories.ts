@@ -423,7 +423,14 @@ export async function saveRoute(input: any) {
     const route = input.id
       ? await tx.route.update({
           where: { id: input.id },
-          data: { clientId: input.clientId, name: input.name, date: new Date(input.date), status: input.status, notes: input.notes }
+          data: {
+            clientId: input.clientId,
+            name: input.name,
+            date: new Date(input.date),
+            status: input.status,
+            notes: input.notes,
+            version: { increment: 1 }
+          }
         })
       : await tx.route.create({
           data: { clientId: input.clientId, name: input.name, date: new Date(input.date), status: input.status, notes: input.notes }

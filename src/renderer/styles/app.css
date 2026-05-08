@@ -674,6 +674,10 @@ th {
   margin-top: 16px;
 }
 
+.route-print-report {
+  display: none;
+}
+
 .toast {
   position: fixed;
   right: 22px;
@@ -797,6 +801,10 @@ th {
     display: none !important;
   }
 
+  .content > :not(.route-print-report) {
+    display: none !important;
+  }
+
   .app-shell,
   .route-layout,
   .route-groups {
@@ -805,6 +813,83 @@ th {
 
   .content {
     padding: 0;
+  }
+
+  .route-print-report {
+    display: block;
+    color: #111;
+    background: #fff;
+  }
+
+  .route-print-report header {
+    display: flex;
+    justify-content: space-between;
+    gap: 20px;
+    align-items: start;
+    margin-bottom: 18px;
+    border-bottom: 2px solid #111;
+    padding-bottom: 12px;
+  }
+
+  .route-print-report h1,
+  .route-print-report h2 {
+    margin: 0;
+    letter-spacing: 0;
+  }
+
+  .route-print-report header span {
+    display: block;
+    margin-bottom: 4px;
+    font-size: 12px;
+    font-weight: 800;
+    text-transform: uppercase;
+  }
+
+  .route-print-report dl {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(120px, 1fr));
+    gap: 8px 18px;
+    margin: 0;
+  }
+
+  .route-print-report dt {
+    font-size: 10px;
+    font-weight: 800;
+    text-transform: uppercase;
+    color: #555;
+  }
+
+  .route-print-report dd {
+    margin: 0;
+    font-weight: 700;
+  }
+
+  .route-print-card {
+    break-inside: avoid;
+    margin-bottom: 18px;
+  }
+
+  .route-print-card-head {
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
+    align-items: baseline;
+    margin-bottom: 8px;
+  }
+
+  .route-print-card-head p {
+    margin: 0;
+    font-size: 12px;
+  }
+
+  .route-print-report table {
+    min-width: 0;
+    font-size: 11px;
+  }
+
+  .route-print-report th,
+  .route-print-report td {
+    padding: 6px;
   }
 
   .route-card {

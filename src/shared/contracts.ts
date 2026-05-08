@@ -123,6 +123,33 @@ export type RouteBatchInput = {
   }>;
 };
 
+export type RouteReportPassenger = {
+  order: number;
+  name: string;
+  client?: string;
+  address?: string;
+  destination?: string;
+  phone?: string;
+};
+
+export type RouteReportCard = {
+  name: string;
+  vehicle?: string;
+  plate?: string;
+  driver?: string;
+  capacity?: number;
+  passengers: RouteReportPassenger[];
+};
+
+export type RouteReport = {
+  title: string;
+  client?: string;
+  date: string;
+  status?: string;
+  version?: number;
+  cards: RouteReportCard[];
+};
+
 export type BackupResult = {
   filePath: string;
   createdAt: string;

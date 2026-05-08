@@ -163,6 +163,7 @@ model Route {
   name        String
   date        DateTime
   status      RouteStatus      @default(DRAFT)
+  version     Int              @default(1)
   notes       String?
   client      Client           @relation(fields: [clientId], references: [id], onDelete: Cascade)
   vehicles    RouteVehicle[]
