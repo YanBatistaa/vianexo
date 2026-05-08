@@ -6,7 +6,15 @@ on:
       release_notes:
         description: "Notas da versao"
         required: false
-        default: "Nova versao do ViaNexo."
+        default: ""
+      channel:
+        description: "Canal da release"
+        type: choice
+        required: true
+        default: "stable"
+        options:
+          - stable
+          - beta
 
 permissions:
   contents: write
@@ -34,6 +42,18 @@ jobs:
       - name: Smoke test
         run: npm run test:smoke
 
+      - name: Permission test
+        run: npm run test:permissions
+
+      - name: Contract test
+        run: npm run test:contracts
+
+      - name: Generate changelog
+        shell: pwsh
+        run: |
+          $version = node -p "require('./package.json').version"
+          npm run release:changelog -- --version=$version --channel=${{ inputs.channel }}
+
       - name: Build installer
         run: npm run package
 
@@ -54,14 +74,24 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           RELEASE_NOTES: ${{ inputs.release_notes }}
+          RELEASE_CHANNEL: ${{ inputs.channel }}
         run: |
           $version = node -p "require('./package.json').version"
-          $tag = "v$version"
+          $tag = if ($env:RELEASE_CHANNEL -eq "beta") { "v$version-beta" } else { "v$version" }
+          $notesFile = "releases/v$version.md"
           git tag $tag
           git push origin $tag
+          $extraArgs = @()
+          if ($env:RELEASE_CHANNEL -eq "beta") { $extraArgs += "--prerelease" }
+          if ($env:RELEASE_NOTES) {
+            $notes = $env:RELEASE_NOTES
+          } else {
+            $notes = Get-Content $notesFile -Raw
+          }
           gh release create $tag `
             "release/ViaNexo-Setup-$version.exe" `
             "release/ViaNexo-Setup-$version.exe.blockmap" `
             "release/latest.yml" `
             --title "ViaNexo $version" `
-            --notes "$env:RELEASE_NOTES"
+            --notes "$notes" `
+            @extraArgs

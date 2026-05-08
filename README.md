@@ -55,6 +55,7 @@ npm.cmd run dev
 npm.cmd run lint
 npm.cmd run test:smoke
 npm.cmd run test:permissions
+npm.cmd run test:contracts
 npm.cmd run build
 ```
 
@@ -98,4 +99,15 @@ Quando uma release com versao maior e publicada, o ViaNexo mostra uma notificaca
 
 ## Release automatizada
 
-O workflow `Build and release ViaNexo` pode ser executado manualmente no GitHub Actions. Ele roda lint, smoke test, build do instalador, normaliza os assets do auto-update para `ViaNexo-Setup-<versao>.exe` e cria a release com `latest.yml`.
+O workflow `Build and release ViaNexo` pode ser executado manualmente no GitHub Actions. Ele roda lint, smoke, permissoes, contratos IPC, build do instalador, normaliza os assets do auto-update para `ViaNexo-Setup-<versao>.exe` e cria a release com `latest.yml`.
+
+O campo `channel` permite publicar:
+
+- `stable`: cria `v<versao>`.
+- `beta`: cria `v<versao>-beta` marcada como pre-release.
+
+Para gerar notas locais:
+
+```powershell
+npm.cmd run release:changelog -- --version=0.3.1 --channel=stable
+```
