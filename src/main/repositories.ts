@@ -36,6 +36,53 @@ function assertKeepsCriticalSelfAccess(input: any) {
   }
 }
 
+function getDefaultBackupDir() {
+  return path.join(app.getPath("documents"), "Sistema Vans Backups");
+}
+
+function getSettingsPath() {
+  return path.join(app.getPath("userData"), "settings.json");
+}
+
+function readSettings() {
+  const settingsPath = getSettingsPath();
+  if (!fs.existsSync(settingsPath)) return {};
+  return JSON.parse(fs.readFileSync(settingsPath, "utf8")) as { backupDir?: string };
+}
+
+function writeSettings(settings: { backupDir?: string }) {
+  fs.mkdirSync(path.dirname(getSettingsPath()), { recursive: true });
+  fs.writeFileSync(getSettingsPath(), JSON.stringify(settings, null, 2));
+}
+
+function getBackupDir() {
+  return readSettings().backupDir || getDefaultBackupDir();
+}
+
+function assertSqliteFile(filePath: string) {
+  const header = Buffer.alloc(16);
+  const fd = fs.openSync(filePath, "r");
+  try {
+    fs.readSync(fd, header, 0, 16, 0);
+  } finally {
+    fs.closeSync(fd);
+  }
+  if (header.toString("utf8") !== "SQLite format 3\u0000") {
+    throw new Error("O arquivo selecionado nao parece ser um banco SQLite valido.");
+  }
+}
+
+export async function logAudit(input: { userId?: string; action: string; target?: string; detail?: Record<string, unknown> }) {
+  return getPrisma().auditLog.create({
+    data: {
+      userId: input.userId,
+      action: input.action,
+      target: input.target,
+      detail: JSON.stringify(input.detail ?? {})
+    }
+  });
+}
+
 export async function bootstrap() {
   await ensureDatabaseSchema();
   const prisma = getPrisma();
@@ -237,6 +284,8 @@ export async function saveUser(input: any, actorUserId?: string) {
     await prisma.permission.createMany({ data: permissionRows(user.id, input.permissions) });
   }
 
+  await logAudit({ userId: actorUserId, action: input.id ? "users.update" : "users.create", target: user.id });
+
   return prisma.user.findUnique({
     where: { id: user.id },
     select: { id: true, name: true, email: true, status: true, permissions: true }
@@ -253,6 +302,7 @@ export async function deleteUser(id: string, actorUserId?: string) {
     throw new Error("Mantenha pelo menos um usuario ativo no sistema.");
   }
   await prisma.user.delete({ where: { id } });
+  await logAudit({ userId: actorUserId, action: "users.delete", target: id });
   return true;
 }
 
@@ -319,6 +369,14 @@ export async function importEmployees(input: any) {
     }
 
     return { importJob, employees };
+  });
+}
+
+export async function listAuditLogs() {
+  return getPrisma().auditLog.findMany({
+    orderBy: { createdAt: "desc" },
+    take: 80,
+    include: { user: { select: { name: true, email: true } } }
   });
 }
 
@@ -448,9 +506,9 @@ export async function saveRouteBatch(input: any) {
   return savedRoutes;
 }
 
-export async function createBackup() {
+export async function createBackup(actorUserId?: string) {
   const dbPath = getDatabasePath();
-  const backupDir = path.join(app.getPath("documents"), "Sistema Vans Backups");
+  const backupDir = getBackupDir();
   fs.mkdirSync(backupDir, { recursive: true });
   const filePath = path.join(backupDir, `sistema-vans-${new Date().toISOString().replace(/[:.]/g, "-")}.db`);
   if (fs.existsSync(dbPath)) {
@@ -458,16 +516,49 @@ export async function createBackup() {
   } else {
     fs.writeFileSync(filePath, "");
   }
-  return { filePath, createdAt: new Date().toISOString() };
+  const result = { filePath, createdAt: new Date().toISOString() };
+  await logAudit({ userId: actorUserId, action: "backup.create", target: filePath });
+  return result;
 }
 
-export async function restoreBackup(backupPath: string) {
+export async function getBackupSettings() {
+  const directory = getBackupDir();
+  fs.mkdirSync(directory, { recursive: true });
+  const backups = fs.readdirSync(directory)
+    .filter((fileName) => fileName.toLowerCase().endsWith(".db"))
+    .map((fileName) => {
+      const filePath = path.join(directory, fileName);
+      const stat = fs.statSync(filePath);
+      return { filePath, createdAt: stat.mtime.toISOString(), mtime: stat.mtime.getTime() };
+    })
+    .sort((left, right) => right.mtime - left.mtime);
+  const latest = backups[0];
+  return {
+    directory,
+    latestBackup: latest ? {
+      filePath: latest.filePath,
+      createdAt: latest.createdAt,
+      ageDays: Math.floor((Date.now() - latest.mtime) / 86400000)
+    } : undefined
+  };
+}
+
+export function setBackupDirectory(directory: string) {
+  if (!directory || !fs.existsSync(directory) || !fs.statSync(directory).isDirectory()) {
+    throw new Error("Selecione uma pasta valida para backups.");
+  }
+  writeSettings({ ...readSettings(), backupDir: directory });
+  return { directory };
+}
+
+export async function restoreBackup(backupPath: string, actorUserId?: string) {
   if (!backupPath || path.extname(backupPath).toLowerCase() !== ".db" || !fs.existsSync(backupPath)) {
     throw new Error("Selecione um backup SQLite valido.");
   }
+  assertSqliteFile(backupPath);
 
   const dbPath = getDatabasePath();
-  const backupDir = path.join(app.getPath("documents"), "Sistema Vans Backups");
+  const backupDir = getBackupDir();
   fs.mkdirSync(backupDir, { recursive: true });
   const safetyCopyPath = path.join(backupDir, `antes-da-restauracao-${new Date().toISOString().replace(/[:.]/g, "-")}.db`);
 
@@ -477,6 +568,7 @@ export async function restoreBackup(backupPath: string) {
   }
   fs.copyFileSync(backupPath, dbPath);
   await ensureDatabaseSchema();
+  await logAudit({ userId: actorUserId, action: "backup.restore", target: backupPath, detail: { safetyCopyPath } });
 
   return {
     restored: true,

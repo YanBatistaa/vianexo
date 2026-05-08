@@ -9,7 +9,9 @@ import {
   deleteUser,
   deleteVehicle,
   getUserAccessState,
+  getBackupSettings,
   importEmployees,
+  listAuditLogs,
   listImportTemplates,
   listClients,
   listDrivers,
@@ -24,6 +26,7 @@ import {
   saveRouteBatch,
   saveUser,
   saveVehicle,
+  setBackupDirectory,
   setupAdmin,
   login,
   restoreBackup
@@ -154,8 +157,19 @@ export function registerIpcHandlers() {
   protectedHandle("routes:save", "routes", (input: any) => input?.id ? "edit" : "create", (input) => saveRoute(routeSchema.parse(input)));
   protectedHandle("routes:save-batch", "routes", (input: any) => input?.routes?.some((route: any) => route.id) ? "edit" : "create", (input) => saveRouteBatch(routeBatchSchema.parse(input)));
 
-  protectedHandle("backup:create", "settings", "create", () => createBackup());
-  protectedHandle("backup:restore", "settings", "edit", async () => {
+  protectedHandle("backup:create", "settings", "create", async (_input, event) => createBackup(await getSessionUserId(event)));
+  protectedHandle("backup:settings", "settings", "view", () => getBackupSettings());
+  protectedHandle("backup:choose-directory", "settings", "edit", async () => {
+    const result = await dialog.showOpenDialog({
+      title: "Escolher pasta de backups do ViaNexo",
+      properties: ["openDirectory", "createDirectory"]
+    });
+    if (result.canceled || !result.filePaths[0]) {
+      return {};
+    }
+    return setBackupDirectory(result.filePaths[0]);
+  });
+  protectedHandle("backup:restore", "settings", "edit", async (_input, event) => {
     const result = await dialog.showOpenDialog({
       title: "Selecionar backup do ViaNexo",
       properties: ["openFile"],
@@ -164,8 +178,9 @@ export function registerIpcHandlers() {
     if (result.canceled || !result.filePaths[0]) {
       return { restored: false };
     }
-    return restoreBackup(result.filePaths[0]);
+    return restoreBackup(result.filePaths[0], await getSessionUserId(event));
   });
+  protectedHandle("audit:list", "settings", "view", () => listAuditLogs());
   handle("updates:check", async () => {
     const currentVersion = app.getVersion();
     if (process.env.NODE_ENV === "development") {

@@ -40,7 +40,10 @@ const api: DesktopApi = {
   saveRoute: (input: RouteDraftInput & { id?: string }) => invoke("routes:save", input),
   saveRouteBatch: (input: RouteBatchInput) => invoke("routes:save-batch", input),
   createBackup: () => invoke("backup:create"),
+  getBackupSettings: () => invoke("backup:settings"),
+  chooseBackupDirectory: () => invoke("backup:choose-directory"),
   restoreBackup: () => invoke("backup:restore"),
+  listAuditLogs: () => invoke("audit:list"),
   checkForUpdates: () => invoke("updates:check"),
   downloadAndInstallUpdate: () => invoke("updates:download-and-install")
 };

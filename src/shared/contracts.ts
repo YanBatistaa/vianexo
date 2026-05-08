@@ -128,6 +128,15 @@ export type BackupResult = {
   createdAt: string;
 };
 
+export type BackupSettings = {
+  directory: string;
+  latestBackup?: {
+    filePath: string;
+    createdAt: string;
+    ageDays: number;
+  };
+};
+
 export type RestoreBackupResult = {
   restored: boolean;
   restoredFrom?: string;
@@ -175,7 +184,10 @@ export type DesktopApi = {
   saveRoute(input: RouteDraftInput & { id?: string }): ApiResult<any>;
   saveRouteBatch(input: RouteBatchInput): ApiResult<any[]>;
   createBackup(): ApiResult<BackupResult>;
+  getBackupSettings(): ApiResult<BackupSettings>;
+  chooseBackupDirectory(): ApiResult<{ directory?: string }>;
   restoreBackup(): ApiResult<RestoreBackupResult>;
+  listAuditLogs(): ApiResult<any[]>;
   checkForUpdates(): ApiResult<UpdateCheckResult>;
   downloadAndInstallUpdate(): ApiResult<UpdateInstallResult>;
 };

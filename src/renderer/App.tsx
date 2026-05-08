@@ -1152,6 +1152,14 @@ function SettingsModule({ user, showUpdate, onLogout, refresh, notify }: any) {
   const [updateMessage, setUpdateMessage] = useState("");
   const [checking, setChecking] = useState(false);
   const [restoring, setRestoring] = useState(false);
+  const [backupSettings, setBackupSettings] = useState<any>(null);
+  const [auditLogs, setAuditLogs] = useState<any[]>([]);
+
+  useEffect(() => {
+    if (!can(user, "settings", "view")) return;
+    api.getBackupSettings().then(setBackupSettings);
+    api.listAuditLogs().then(setAuditLogs);
+  }, [user]);
 
   async function checkUpdates() {
     setChecking(true);
@@ -1182,12 +1190,22 @@ function SettingsModule({ user, showUpdate, onLogout, refresh, notify }: any) {
       const result = await api.restoreBackup();
       if (result.restored) {
         refresh();
+        setBackupSettings(await api.getBackupSettings());
+        setAuditLogs(await api.listAuditLogs());
         notify("Backup restaurado com sucesso.");
       }
     } catch (error) {
       notify(error instanceof Error ? error.message : "Nao foi possivel restaurar o backup.", "error");
     } finally {
       setRestoring(false);
+    }
+  }
+
+  async function chooseBackupDirectory() {
+    const result = await api.chooseBackupDirectory();
+    if (result.directory) {
+      setBackupSettings(await api.getBackupSettings());
+      notify("Pasta de backup atualizada.");
     }
   }
 
@@ -1214,10 +1232,32 @@ function SettingsModule({ user, showUpdate, onLogout, refresh, notify }: any) {
         </div>
         <div className="panel">
           <h3>Backup e restauracao</h3>
-          <p className="muted-copy">Restaure um arquivo `.db` gerado pelo ViaNexo. O app cria uma copia do banco atual antes de substituir os dados.</p>
+          <p className="muted-copy">Pasta atual: <strong>{backupSettings?.directory ?? "Carregando..."}</strong></p>
+          {backupSettings?.latestBackup ? (
+            <p className={backupSettings.latestBackup.ageDays > 7 ? "error-line" : "success-line"}>
+              Ultimo backup ha {backupSettings.latestBackup.ageDays} dia(s).
+            </p>
+          ) : <p className="error-line">Nenhum backup encontrado.</p>}
+          <button className="secondary-button" onClick={chooseBackupDirectory} disabled={!can(user, "settings", "edit")}>
+            <DatabaseBackup size={17} /> Escolher pasta
+          </button>
+          <p className="muted-copy">Restaure um arquivo `.db` gerado pelo ViaNexo. O app valida o arquivo e cria uma copia do banco atual antes de substituir os dados.</p>
           <button className="secondary-button danger" onClick={restoreBackup} disabled={restoring || !can(user, "settings", "edit")}>
             <DatabaseBackup size={17} /> {restoring ? "Restaurando..." : "Restaurar backup"}
           </button>
+        </div>
+        <div className="panel audit-panel">
+          <h3>Auditoria recente</h3>
+          {auditLogs.length === 0 ? <p className="muted-copy">Nenhuma acao sensivel registrada.</p> : (
+            <ul>
+              {auditLogs.slice(0, 8).map((log) => (
+                <li key={log.id}>
+                  <strong>{log.action}</strong>
+                  <span>{log.user?.name ?? "Sistema"} - {new Date(log.createdAt).toLocaleString("pt-BR")}</span>
+                </li>
+              ))}
+            </ul>
+          )}
         </div>
       </section>
     </>
