@@ -14,7 +14,16 @@ export default defineConfig({
   },
   build: {
     outDir: "dist/renderer",
-    emptyOutDir: false
+    emptyOutDir: false,
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          dnd: ["@dnd-kit/core", "@dnd-kit/utilities"],
+          xlsx: ["xlsx"],
+          icons: ["lucide-react"]
+        }
+      }
+    }
   },
   server: {
     port: 5173

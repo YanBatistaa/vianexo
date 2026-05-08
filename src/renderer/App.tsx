@@ -42,7 +42,6 @@ import {
   useSensors
 } from "@dnd-kit/core";
 import { CSS } from "@dnd-kit/utilities";
-import * as XLSX from "xlsx";
 import { createFullPermissionMatrix, createViewOnlyPermissionMatrix, hasPermission } from "../shared/permissions";
 import type {
   EmployeeImportRow,
@@ -547,6 +546,7 @@ function ImportsModule({ clients, employees, refresh, user, notify }: any) {
     if (!file) return;
     setFileName(file.name);
     const buffer = await file.arrayBuffer();
+    const XLSX = await import("xlsx");
     const workbook = XLSX.read(buffer);
     const sheet = workbook.Sheets[workbook.SheetNames[0]];
     const json = XLSX.utils.sheet_to_json<Record<string, unknown>>(sheet, { defval: "", raw: false });
