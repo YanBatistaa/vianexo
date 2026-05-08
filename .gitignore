@@ -1,0 +1,10 @@
+node_modules
+prisma-client
+dist
+release
+.env
+*.db
+*.db-journal
+*.log
+.vite
+coverage

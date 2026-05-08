@@ -1,0 +1,177 @@
+generator client {
+  provider = "prisma-client-js"
+  output   = "../prisma-client"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+enum UserStatus {
+  ACTIVE
+  INACTIVE
+}
+
+enum VehicleStatus {
+  ACTIVE
+  MAINTENANCE
+  INACTIVE
+}
+
+enum RouteStatus {
+  DRAFT
+  FINAL
+  ARCHIVED
+}
+
+enum ImportStatus {
+  DRAFT
+  IMPORTED
+  FAILED
+}
+
+model User {
+  id           String       @id @default(cuid())
+  name         String
+  email        String       @unique
+  passwordHash String
+  status       UserStatus   @default(ACTIVE)
+  permissions  Permission[]
+  createdAt    DateTime     @default(now())
+  updatedAt    DateTime     @updatedAt
+}
+
+model Permission {
+  id        String   @id @default(cuid())
+  userId    String
+  module    String
+  action    String
+  allowed   Boolean  @default(true)
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+
+  @@unique([userId, module, action])
+}
+
+model Client {
+  id        String     @id @default(cuid())
+  name      String
+  document  String?
+  contact   String?
+  phone     String?
+  email     String?
+  notes     String?
+  employees Employee[]
+  imports   ImportJob[]
+  routes    Route[]
+  createdAt DateTime   @default(now())
+  updatedAt DateTime   @updatedAt
+}
+
+model Employee {
+  id             String            @id @default(cuid())
+  clientId       String
+  name           String
+  address        String?
+  destination    String?
+  phone          String?
+  notes          String?
+  extraData      String            @default("{}")
+  client         Client            @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  routePassengers RoutePassenger[]
+  createdAt      DateTime          @default(now())
+  updatedAt      DateTime          @updatedAt
+}
+
+model Driver {
+  id        String            @id @default(cuid())
+  name      String
+  phone     String?
+  document  String?
+  notes     String?
+  vehicles  VehicleDriver[]
+  routes    RouteVehicle[]
+  createdAt DateTime          @default(now())
+  updatedAt DateTime          @updatedAt
+}
+
+model Vehicle {
+  id        String            @id @default(cuid())
+  label     String
+  plate     String?
+  capacity  Int
+  status    VehicleStatus     @default(ACTIVE)
+  notes     String?
+  drivers   VehicleDriver[]
+  routes    RouteVehicle[]
+  createdAt DateTime          @default(now())
+  updatedAt DateTime          @updatedAt
+}
+
+model VehicleDriver {
+  id        String   @id @default(cuid())
+  vehicleId String
+  driverId  String
+  vehicle   Vehicle  @relation(fields: [vehicleId], references: [id], onDelete: Cascade)
+  driver    Driver   @relation(fields: [driverId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+
+  @@unique([vehicleId, driverId])
+}
+
+model ImportJob {
+  id           String       @id @default(cuid())
+  clientId     String
+  fileName     String
+  status       ImportStatus @default(DRAFT)
+  columnMap    String       @default("{}")
+  importedRows Int          @default(0)
+  rawPreview   String       @default("[]")
+  client       Client       @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  createdAt    DateTime     @default(now())
+  updatedAt    DateTime     @updatedAt
+}
+
+model Route {
+  id          String           @id @default(cuid())
+  clientId    String
+  name        String
+  date        DateTime
+  status      RouteStatus      @default(DRAFT)
+  notes       String?
+  client      Client           @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  vehicles    RouteVehicle[]
+  passengers  RoutePassenger[]
+  createdAt   DateTime         @default(now())
+  updatedAt   DateTime         @updatedAt
+}
+
+model RouteVehicle {
+  id        String           @id @default(cuid())
+  routeId   String
+  vehicleId String
+  driverId  String?
+  groupName String
+  sequence  Int              @default(0)
+  route     Route            @relation(fields: [routeId], references: [id], onDelete: Cascade)
+  vehicle   Vehicle          @relation(fields: [vehicleId], references: [id])
+  driver    Driver?          @relation(fields: [driverId], references: [id])
+  passengers RoutePassenger[]
+  createdAt DateTime         @default(now())
+  updatedAt DateTime         @updatedAt
+}
+
+model RoutePassenger {
+  id             String       @id @default(cuid())
+  routeId        String
+  routeVehicleId String?
+  employeeId     String
+  order          Int          @default(0)
+  route          Route        @relation(fields: [routeId], references: [id], onDelete: Cascade)
+  routeVehicle   RouteVehicle? @relation(fields: [routeVehicleId], references: [id], onDelete: SetNull)
+  employee       Employee     @relation(fields: [employeeId], references: [id])
+  createdAt      DateTime     @default(now())
+
+  @@unique([routeId, employeeId])
+}
