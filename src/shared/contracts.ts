@@ -176,6 +176,18 @@ export type RestoreBackupResult = {
   restoredAt?: string;
 };
 
+export type DataExportPackageResult = {
+  filePath: string;
+  createdAt: string;
+  counts: {
+    clients: number;
+    employees: number;
+    vehicles: number;
+    drivers: number;
+    routes: number;
+  };
+};
+
 export type UpdateCheckResult = {
   status: "available" | "not-available" | "disabled" | "error";
   currentVersion: string;
@@ -220,6 +232,7 @@ export type DesktopApi = {
   getBackupSettings(): ApiResult<BackupSettings>;
   chooseBackupDirectory(): ApiResult<{ directory?: string }>;
   restoreBackup(): ApiResult<RestoreBackupResult>;
+  exportDataPackage(): ApiResult<DataExportPackageResult>;
   listAuditLogs(): ApiResult<any[]>;
   checkForUpdates(): ApiResult<UpdateCheckResult>;
   downloadAndInstallUpdate(): ApiResult<UpdateInstallResult>;

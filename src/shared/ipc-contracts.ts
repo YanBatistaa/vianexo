@@ -174,6 +174,12 @@ export const ipcContracts: Record<keyof DesktopApi, IpcContract> = {
     payload: "void",
     returns: "RestoreBackupResult"
   },
+  exportDataPackage: {
+    channel: "data:export-package",
+    permission: { module: "settings", action: "view" },
+    payload: "void",
+    returns: "DataExportPackageResult"
+  },
   listAuditLogs: {
     channel: "audit:list",
     permission: { module: "settings", action: "view" },

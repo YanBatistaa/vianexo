@@ -615,6 +615,50 @@ export async function getBackupSettings() {
   };
 }
 
+export async function exportDataPackage(actorUserId?: string) {
+  const prisma = getPrisma();
+  const [clients, employees, vehicles, drivers, routes] = await Promise.all([
+    prisma.client.findMany({ orderBy: { name: "asc" } }),
+    prisma.employee.findMany({ orderBy: { name: "asc" }, include: { client: true } }),
+    prisma.vehicle.findMany({ orderBy: { label: "asc" }, include: { drivers: { include: { driver: true } } } }),
+    prisma.driver.findMany({ orderBy: { name: "asc" } }),
+    prisma.route.findMany({
+      orderBy: { date: "desc" },
+      include: {
+        client: true,
+        vehicles: {
+          orderBy: { sequence: "asc" },
+          include: {
+            vehicle: true,
+            driver: true,
+            passengers: { orderBy: { order: "asc" }, include: { employee: { include: { client: true } } } }
+          }
+        }
+      }
+    })
+  ]);
+  const createdAt = new Date().toISOString();
+  const payload = {
+    schema: "vianexo.sync-package.v1",
+    appVersion: app.getVersion(),
+    createdAt,
+    counts: {
+      clients: clients.length,
+      employees: employees.length,
+      vehicles: vehicles.length,
+      drivers: drivers.length,
+      routes: routes.length
+    },
+    data: { clients, employees, vehicles, drivers, routes }
+  };
+  const exportDir = path.join(getBackupDir(), "sync-packages");
+  fs.mkdirSync(exportDir, { recursive: true });
+  const filePath = path.join(exportDir, `vianexo-sync-${createdAt.replace(/[:.]/g, "-")}.json`);
+  fs.writeFileSync(filePath, JSON.stringify(payload, null, 2));
+  await logAudit({ userId: actorUserId, action: "data.export-package", target: filePath, detail: payload.counts });
+  return { filePath, createdAt, counts: payload.counts };
+}
+
 export function setBackupDirectory(directory: string) {
   if (!directory || !fs.existsSync(directory) || !fs.statSync(directory).isDirectory()) {
     throw new Error("Selecione uma pasta valida para backups.");

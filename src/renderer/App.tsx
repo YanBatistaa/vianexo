@@ -1314,6 +1314,7 @@ function SettingsModule({ user, showUpdate, onLogout, refresh, notify }: any) {
   const [confirmRestore, setConfirmRestore] = useState(false);
   const [backupSettings, setBackupSettings] = useState<any>(null);
   const [auditLogs, setAuditLogs] = useState<any[]>([]);
+  const [syncExport, setSyncExport] = useState<any>(null);
 
   useEffect(() => {
     if (!can(user, "settings", "view")) return;
@@ -1364,6 +1365,13 @@ function SettingsModule({ user, showUpdate, onLogout, refresh, notify }: any) {
       setBackupSettings(await api.getBackupSettings());
       notify("Pasta de backup atualizada.");
     }
+  }
+
+  async function exportSyncPackage() {
+    const result = await api.exportDataPackage();
+    setSyncExport(result);
+    setAuditLogs(await api.listAuditLogs());
+    notify("Pacote de sincronizacao exportado.");
   }
 
   return (
@@ -1417,6 +1425,18 @@ function SettingsModule({ user, showUpdate, onLogout, refresh, notify }: any) {
                 </li>
               ))}
             </ul>
+          )}
+        </div>
+        <div className="panel">
+          <h3>Nuvem e portal</h3>
+          <p className="muted-copy">Exporte um pacote JSON versionado para alimentar sincronizacao futura ou um portal de cliente.</p>
+          <button className="secondary-button" onClick={exportSyncPackage} disabled={!can(user, "settings", "view")}>
+            <Download size={17} /> Exportar pacote
+          </button>
+          {syncExport && (
+            <p className="success-line">
+              {syncExport.counts.clients} clientes, {syncExport.counts.employees} funcionarios, {syncExport.counts.routes} rotas.
+            </p>
           )}
         </div>
       </section>

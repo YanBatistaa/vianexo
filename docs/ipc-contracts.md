@@ -32,6 +32,7 @@ Fonte de verdade: `src/shared/ipc-contracts.ts`.
 | `getBackupSettings` | `backup:settings` | `settings.view` | `void` | `BackupSettings` |
 | `chooseBackupDirectory` | `backup:choose-directory` | `settings.edit` | `void` | `{ directory? }` |
 | `restoreBackup` | `backup:restore` | `settings.edit` | `void` | `RestoreBackupResult` |
+| `exportDataPackage` | `data:export-package` | `settings.view` | `void` | `DataExportPackageResult` |
 | `listAuditLogs` | `audit:list` | `settings.view` | `void` | `AuditLog[]` |
 | `checkForUpdates` | `updates:check` | publica | `void` | `UpdateCheckResult` |
 | `downloadAndInstallUpdate` | `updates:download-and-install` | publica | `void` | `UpdateInstallResult` |

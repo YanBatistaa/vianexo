@@ -10,6 +10,7 @@ import {
   deleteVehicle,
   getUserAccessState,
   getBackupSettings,
+  exportDataPackage,
   importEmployees,
   listAuditLogs,
   listImportTemplates,
@@ -189,6 +190,7 @@ export function registerIpcHandlers() {
     }
     return restoreBackup(result.filePaths[0], await getSessionUserId(event));
   });
+  protectedHandle(ipcChannels.exportDataPackage, "settings", "view", async (_input, event) => exportDataPackage(await getSessionUserId(event)));
   protectedHandle(ipcChannels.listAuditLogs, "settings", "view", () => listAuditLogs());
   handle(ipcChannels.checkForUpdates, async () => {
     const currentVersion = app.getVersion();

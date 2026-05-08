@@ -45,6 +45,7 @@ const api: DesktopApi = {
   getBackupSettings: () => invoke(ipcChannels.getBackupSettings),
   chooseBackupDirectory: () => invoke(ipcChannels.chooseBackupDirectory),
   restoreBackup: () => invoke(ipcChannels.restoreBackup),
+  exportDataPackage: () => invoke(ipcChannels.exportDataPackage),
   listAuditLogs: () => invoke(ipcChannels.listAuditLogs),
   checkForUpdates: () => invoke(ipcChannels.checkForUpdates),
   downloadAndInstallUpdate: () => invoke(ipcChannels.downloadAndInstallUpdate)
