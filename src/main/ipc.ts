@@ -29,6 +29,8 @@ import {
   setBackupDirectory,
   setupAdmin,
   login,
+  restoreSession,
+  revokeSession,
   restoreBackup
 } from "./repositories";
 import type { PermissionAction, PermissionModule } from "../shared/contracts";
@@ -128,8 +130,14 @@ export function registerIpcHandlers() {
     sessions.set(event.sender.id, user.id);
     return user;
   });
-  handle(ipcChannels.logout, (_input, event) => {
+  handle(ipcChannels.restoreSession, async (token: string, event) => {
+    const user = await restoreSession(token);
+    sessions.set(event.sender.id, user.id);
+    return user;
+  });
+  handle(ipcChannels.logout, async (token: string | undefined, event) => {
     sessions.delete(event.sender.id);
+    await revokeSession(token);
     return true;
   });
 

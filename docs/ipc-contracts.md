@@ -7,7 +7,8 @@ Fonte de verdade: `src/shared/ipc-contracts.ts`.
 | `bootstrap` | `app:bootstrap` | publica | `void` | `AppBootstrap` |
 | `setupAdmin` | `setup:admin` | publica | `SetupAdminInput` | `{ id, name, email }` |
 | `login` | `auth:login` | publica | `LoginInput` | `SessionUser` |
-| `logout` | `auth:logout` | sessao | `void` | `boolean` |
+| `restoreSession` | `auth:restore` | publica com token | `sessionToken` | `SessionUser` |
+| `logout` | `auth:logout` | sessao | `sessionToken?` | `boolean` |
 | `listClients` | `clients:list` | `clients.view` | `void` | `Client[]` |
 | `saveClient` | `clients:save` | `clients.create/edit` | `ClientInput & { id? }` | `Client` |
 | `deleteClient` | `clients:delete` | `clients.delete` | `id` | `boolean` |

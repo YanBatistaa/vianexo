@@ -58,6 +58,7 @@ type ModuleKey = "dashboard" | "clients" | "employees" | "vehicles" | "drivers" 
 
 const api = window.sistemaVans;
 const appName = "ViaNexo";
+const sessionStorageKey = "vianexo.sessionToken";
 
 const emptyClient = { id: "", name: "", document: "", contact: "", phone: "", email: "", notes: "" };
 const emptyDriver = { id: "", name: "", phone: "", document: "", notes: "" };
@@ -124,7 +125,11 @@ function LoginScreen({ onLogin }: { onLogin: (user: SessionUser) => void }) {
     event.preventDefault();
     setError("");
     try {
-      onLogin(await api.login(form));
+      const user = await api.login(form);
+      if (user.sessionToken) {
+        localStorage.setItem(sessionStorageKey, user.sessionToken);
+      }
+      onLogin(user);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Nao foi possivel entrar.");
     }
@@ -1295,6 +1300,9 @@ function SettingsModule({ user, showUpdate, onLogout, refresh, notify }: any) {
               Ultimo backup ha {backupSettings.latestBackup.ageDays} dia(s).
             </p>
           ) : <p className="error-line">Nenhum backup encontrado.</p>}
+          {backupSettings?.latestBackup?.sha256 && (
+            <p className="hash-line">SHA-256: {backupSettings.latestBackup.sha256.slice(0, 16)}...</p>
+          )}
           <button className="secondary-button" onClick={chooseBackupDirectory} disabled={!can(user, "settings", "edit")}>
             <DatabaseBackup size={17} /> Escolher pasta
           </button>
@@ -1470,7 +1478,19 @@ function App() {
   const [user, setUser] = useState<SessionUser | null>(null);
 
   useEffect(() => {
-    api.bootstrap().then((state) => setNeedsSetup(state.needsSetup));
+    api.bootstrap().then(async (state) => {
+      setNeedsSetup(state.needsSetup);
+      if (!state.needsSetup) {
+        const token = localStorage.getItem(sessionStorageKey);
+        if (token) {
+          try {
+            setUser(await api.restoreSession(token));
+          } catch {
+            localStorage.removeItem(sessionStorageKey);
+          }
+        }
+      }
+    });
   }, []);
 
   if (needsSetup === null) {
@@ -1486,7 +1506,9 @@ function App() {
   }
 
   return <Shell user={user} onLogout={async () => {
-    await api.logout();
+    const token = localStorage.getItem(sessionStorageKey) ?? undefined;
+    await api.logout(token);
+    localStorage.removeItem(sessionStorageKey);
     setUser(null);
   }} />;
 }

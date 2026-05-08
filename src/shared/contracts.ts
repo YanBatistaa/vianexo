@@ -33,6 +33,7 @@ export type SessionUser = {
   name: string;
   email: string;
   permissions?: PermissionGrant[];
+  sessionToken?: string;
 };
 
 export type ClientInput = {
@@ -153,6 +154,7 @@ export type RouteReport = {
 export type BackupResult = {
   filePath: string;
   createdAt: string;
+  sha256?: string;
 };
 
 export type BackupSettings = {
@@ -161,6 +163,7 @@ export type BackupSettings = {
     filePath: string;
     createdAt: string;
     ageDays: number;
+    sha256?: string;
   };
 };
 
@@ -190,7 +193,8 @@ export type DesktopApi = {
   bootstrap(): ApiResult<AppBootstrap>;
   setupAdmin(input: SetupAdminInput): ApiResult<{ id: string; name: string; email: string }>;
   login(input: LoginInput): ApiResult<SessionUser>;
-  logout(): ApiResult<boolean>;
+  restoreSession(token: string): ApiResult<SessionUser>;
+  logout(token?: string): ApiResult<boolean>;
   listClients(): ApiResult<any[]>;
   saveClient(input: ClientInput & { id?: string }): ApiResult<any>;
   deleteClient(id: string): ApiResult<boolean>;

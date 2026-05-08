@@ -1,10 +1,13 @@
 import bcrypt from "bcryptjs";
+import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import { app } from "electron";
 import { disconnectPrisma, ensureDatabaseSchema, getDatabasePath, getPrisma } from "./db";
 import { createFullPermissionMatrix } from "../shared/permissions";
 import type { PermissionMatrix } from "../shared/contracts";
+
+const sessionDays = 14;
 
 function clean<T extends Record<string, unknown>>(input: T) {
   return Object.fromEntries(
@@ -72,6 +75,22 @@ function assertSqliteFile(filePath: string) {
   }
 }
 
+function sha256(value: string | Buffer) {
+  return crypto.createHash("sha256").update(value).digest("hex");
+}
+
+function fileSha256(filePath: string) {
+  return sha256(fs.readFileSync(filePath));
+}
+
+function createSessionToken() {
+  return crypto.randomBytes(32).toString("base64url");
+}
+
+function sessionExpiry() {
+  return new Date(Date.now() + sessionDays * 86400000);
+}
+
 export async function logAudit(input: { userId?: string; action: string; target?: string; detail?: Record<string, unknown> }) {
   return getPrisma().auditLog.create({
     data: {
@@ -135,12 +154,55 @@ export async function login(input: { email: string; password: string }) {
     throw new Error("Usuario ou senha invalidos.");
   }
 
+  const sessionToken = createSessionToken();
+  await getPrisma().authSession.create({
+    data: {
+      userId: user.id,
+      tokenHash: sha256(sessionToken),
+      expiresAt: sessionExpiry()
+    }
+  });
+  await logAudit({ userId: user.id, action: "auth.login" });
+
   return {
     id: user.id,
     name: user.name,
     email: user.email,
-    permissions: user.permissions
+    permissions: user.permissions,
+    sessionToken
   };
+}
+
+export async function restoreSession(token: string) {
+  await ensureDatabaseSchema();
+  const tokenHash = sha256(token);
+  const session = await getPrisma().authSession.findUnique({
+    where: { tokenHash },
+    include: { user: { include: { permissions: true } } }
+  });
+  if (!session || session.expiresAt <= new Date() || session.user.status !== "ACTIVE") {
+    if (session) {
+      await getPrisma().authSession.delete({ where: { id: session.id } });
+    }
+    throw new Error("Sessao expirada. Entre novamente.");
+  }
+  await getPrisma().authSession.update({
+    where: { id: session.id },
+    data: { expiresAt: sessionExpiry() }
+  });
+  return {
+    id: session.user.id,
+    name: session.user.name,
+    email: session.user.email,
+    permissions: session.user.permissions,
+    sessionToken: token
+  };
+}
+
+export async function revokeSession(token?: string) {
+  if (!token) return true;
+  await getPrisma().authSession.deleteMany({ where: { tokenHash: sha256(token) } });
+  return true;
 }
 
 export async function getUserAccessState(userId: string) {
@@ -524,8 +586,9 @@ export async function createBackup(actorUserId?: string) {
     fs.writeFileSync(filePath, "");
   }
   const result = { filePath, createdAt: new Date().toISOString() };
+  const sha = fs.existsSync(filePath) ? fileSha256(filePath) : undefined;
   await logAudit({ userId: actorUserId, action: "backup.create", target: filePath });
-  return result;
+  return { ...result, sha256: sha };
 }
 
 export async function getBackupSettings() {
@@ -536,7 +599,7 @@ export async function getBackupSettings() {
     .map((fileName) => {
       const filePath = path.join(directory, fileName);
       const stat = fs.statSync(filePath);
-      return { filePath, createdAt: stat.mtime.toISOString(), mtime: stat.mtime.getTime() };
+      return { filePath, createdAt: stat.mtime.toISOString(), mtime: stat.mtime.getTime(), sha256: fileSha256(filePath) };
     })
     .sort((left, right) => right.mtime - left.mtime);
   const latest = backups[0];

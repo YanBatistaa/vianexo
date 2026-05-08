@@ -655,6 +655,13 @@ th {
   font-weight: 800;
 }
 
+.hash-line {
+  color: var(--muted);
+  font-family: "Cascadia Mono", Consolas, monospace;
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+
 .validation-card {
   display: grid;
   gap: 4px;

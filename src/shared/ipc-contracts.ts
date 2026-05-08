@@ -31,6 +31,11 @@ export const ipcContracts: Record<keyof DesktopApi, IpcContract> = {
     payload: "void",
     returns: "boolean"
   },
+  restoreSession: {
+    channel: "auth:restore",
+    payload: "sessionToken",
+    returns: "SessionUser"
+  },
   listClients: {
     channel: "clients:list",
     permission: { module: "clients", action: "view" },
