@@ -195,6 +195,11 @@ export const ipcContracts: Record<keyof DesktopApi, IpcContract> = {
     channel: "updates:download-and-install",
     payload: "void",
     returns: "UpdateInstallResult"
+  },
+  onUpdateStatus: {
+    channel: "updates:status",
+    payload: "callback",
+    returns: "unsubscribe"
   }
 };
 

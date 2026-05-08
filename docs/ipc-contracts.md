@@ -36,3 +36,4 @@ Fonte de verdade: `src/shared/ipc-contracts.ts`.
 | `listAuditLogs` | `audit:list` | `settings.view` | `void` | `AuditLog[]` |
 | `checkForUpdates` | `updates:check` | publica | `void` | `UpdateCheckResult` |
 | `downloadAndInstallUpdate` | `updates:download-and-install` | publica | `void` | `UpdateInstallResult` |
+| `onUpdateStatus` | `updates:status` | evento renderer | `callback` | `unsubscribe` |

@@ -768,6 +768,26 @@ th {
   line-height: 1.45;
 }
 
+.update-progress {
+  display: grid;
+  gap: 8px;
+  margin-top: 14px;
+}
+
+.progress-track {
+  height: 10px;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  background: #fffdf8;
+}
+
+.progress-track span {
+  display: block;
+  height: 100%;
+  background: var(--green);
+  transition: width 180ms ease;
+}
+
 .confirm-dialog h2 {
   margin: 0 0 8px;
 }

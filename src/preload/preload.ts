@@ -48,7 +48,12 @@ const api: DesktopApi = {
   exportDataPackage: () => invoke(ipcChannels.exportDataPackage),
   listAuditLogs: () => invoke(ipcChannels.listAuditLogs),
   checkForUpdates: () => invoke(ipcChannels.checkForUpdates),
-  downloadAndInstallUpdate: () => invoke(ipcChannels.downloadAndInstallUpdate)
+  downloadAndInstallUpdate: () => invoke(ipcChannels.downloadAndInstallUpdate),
+  onUpdateStatus: (callback) => {
+    const listener = (_event: Electron.IpcRendererEvent, status: Parameters<typeof callback>[0]) => callback(status);
+    ipcRenderer.on(ipcChannels.onUpdateStatus, listener);
+    return () => ipcRenderer.off(ipcChannels.onUpdateStatus, listener);
+  }
 };
 
 contextBridge.exposeInMainWorld("sistemaVans", api);

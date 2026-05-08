@@ -197,8 +197,17 @@ export type UpdateCheckResult = {
 };
 
 export type UpdateInstallResult = {
-  status: "downloading" | "downloaded" | "error";
+  status: "downloading" | "downloaded" | "installing" | "error";
   message?: string;
+};
+
+export type UpdateRuntimeStatus = {
+  status: "checking" | "available" | "downloading" | "downloaded" | "installing" | "error";
+  message?: string;
+  percent?: number;
+  transferred?: number;
+  total?: number;
+  bytesPerSecond?: number;
 };
 
 export type ApiResult<T> = Promise<T>;
@@ -236,4 +245,5 @@ export type DesktopApi = {
   listAuditLogs(): ApiResult<any[]>;
   checkForUpdates(): ApiResult<UpdateCheckResult>;
   downloadAndInstallUpdate(): ApiResult<UpdateInstallResult>;
+  onUpdateStatus(callback: (status: UpdateRuntimeStatus) => void): () => void;
 };

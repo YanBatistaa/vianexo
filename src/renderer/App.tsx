@@ -49,7 +49,8 @@ import type {
   PermissionMatrix,
   RouteReport,
   SessionUser,
-  UpdateCheckResult
+  UpdateCheckResult,
+  UpdateRuntimeStatus
 } from "../shared/contracts";
 import { useAsyncData } from "./hooks";
 import { downloadCsv, matchesSearch, routeSearchPayload } from "./utils";
@@ -160,6 +161,7 @@ function Shell({ user, onLogout }: { user: SessionUser; onLogout: () => void | P
   const [active, setActive] = useState<ModuleKey>("dashboard");
   const [refreshKey, setRefreshKey] = useState(0);
   const [updateState, setUpdateState] = useState<UpdateCheckResult | null>(null);
+  const [updateRuntimeStatus, setUpdateRuntimeStatus] = useState<UpdateRuntimeStatus | null>(null);
   const [updateHidden, setUpdateHidden] = useState(false);
   const [installingUpdate, setInstallingUpdate] = useState(false);
   const [toast, setToast] = useState<{ tone: "success" | "error"; message: string } | null>(null);
@@ -205,11 +207,20 @@ function Shell({ user, onLogout }: { user: SessionUser; onLogout: () => void | P
     };
   }, []);
 
+  useEffect(() => api.onUpdateStatus((status) => {
+    setUpdateRuntimeStatus(status);
+    if (status.status === "error") {
+      setInstallingUpdate(false);
+    }
+  }), []);
+
   async function installUpdateNow() {
     setInstallingUpdate(true);
+    setUpdateRuntimeStatus({ status: "downloading", percent: 0, message: "Iniciando atualizacao..." });
     const result = await api.downloadAndInstallUpdate();
     if (result.status === "error") {
       setUpdateState((state) => state ? { ...state, status: "error", message: result.message } : null);
+      setUpdateRuntimeStatus({ status: "error", message: result.message ?? "Nao foi possivel baixar a atualizacao." });
       setInstallingUpdate(false);
     }
   }
@@ -255,6 +266,7 @@ function Shell({ user, onLogout }: { user: SessionUser; onLogout: () => void | P
         <UpdatePrompt
           update={updateState}
           installing={installingUpdate}
+          runtimeStatus={updateRuntimeStatus}
           onInstall={installUpdateNow}
           onLater={() => setUpdateHidden(true)}
         />
@@ -1477,12 +1489,15 @@ function ConfirmDialog({ title, message, confirmLabel = "Confirmar", onCancel, o
   );
 }
 
-function UpdatePrompt({ update, installing, onInstall, onLater }: {
+function UpdatePrompt({ update, installing, runtimeStatus, onInstall, onLater }: {
   update: UpdateCheckResult;
   installing: boolean;
+  runtimeStatus: UpdateRuntimeStatus | null;
   onInstall: () => void;
   onLater: () => void;
 }) {
+  const progress = Math.max(0, Math.min(100, Math.round(runtimeStatus?.percent ?? 0)));
+  const statusMessage = runtimeStatus?.message ?? "Baixe e aplique a nova versao sem passar por telas de instalacao.";
   return (
     <div className="update-overlay" role="dialog" aria-modal="true" aria-labelledby="update-title">
       <section className="update-dialog">
@@ -1495,11 +1510,19 @@ function UpdatePrompt({ update, installing, onInstall, onLater }: {
           ) : (
             <p>A versao {update.latestVersion} esta disponivel. Voce esta usando a versao {update.currentVersion}.</p>
           )}
+          {installing && (
+            <div className="update-progress" aria-live="polite">
+              <div className="progress-track" role="progressbar" aria-valuemin={0} aria-valuemax={100} aria-valuenow={progress}>
+                <span style={{ width: `${progress}%` }} />
+              </div>
+              <small>{statusMessage} {runtimeStatus?.status === "downloading" ? `${progress}%` : ""}</small>
+            </div>
+          )}
           <div className="update-actions">
             <button className="primary-button" onClick={onInstall} disabled={installing || update.status === "error"}>
               <Download size={17} /> {installing ? "Baixando..." : "Atualizar agora"}
             </button>
-            <button className="secondary-button" onClick={onLater}>Depois</button>
+            <button className="secondary-button" onClick={onLater} disabled={installing}>Depois</button>
           </div>
         </div>
       </section>

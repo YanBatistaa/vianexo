@@ -35,6 +35,7 @@ import {
   restoreBackup
 } from "./repositories";
 import type { PermissionAction, PermissionModule } from "../shared/contracts";
+import type { UpdateRuntimeStatus } from "../shared/contracts";
 import { ipcChannels } from "../shared/ipc-contracts";
 import { hasPermission } from "../shared/permissions";
 import {
@@ -54,6 +55,13 @@ autoUpdater.autoDownload = false;
 autoUpdater.autoInstallOnAppQuit = false;
 
 const sessions = new Map<number, string>();
+let updateDownloadActive = false;
+
+function sendUpdateStatus(event: IpcMainInvokeEvent, status: UpdateRuntimeStatus) {
+  if (!event.sender.isDestroyed()) {
+    event.sender.send(ipcChannels.onUpdateStatus, status);
+  }
+}
 
 function compareVersions(versionA: string, versionB: string) {
   const left = versionA.split(".").map((part) => Number(part) || 0);
@@ -225,16 +233,62 @@ export function registerIpcHandlers() {
     }
   });
 
-  handle(ipcChannels.downloadAndInstallUpdate, async () => {
+  handle(ipcChannels.downloadAndInstallUpdate, async (_input, event) => {
+    if (updateDownloadActive) {
+      return { status: "downloading", message: "Atualizacao ja esta em andamento." };
+    }
+
+    updateDownloadActive = true;
+    sendUpdateStatus(event, { status: "downloading", percent: 0, message: "Preparando download da atualizacao..." });
+
+    const onProgress = (info: {
+      percent?: number;
+      transferred?: number;
+      total?: number;
+      bytesPerSecond?: number;
+    }) => {
+      sendUpdateStatus(event, {
+        status: "downloading",
+        percent: Math.round(info.percent ?? 0),
+        transferred: info.transferred,
+        total: info.total,
+        bytesPerSecond: info.bytesPerSecond,
+        message: "Baixando atualizacao..."
+      });
+    };
+
+    const onDownloaded = () => {
+      sendUpdateStatus(event, {
+        status: "downloaded",
+        percent: 100,
+        message: "Download concluido. Aplicando atualizacao em segundo plano..."
+      });
+    };
+
+    autoUpdater.on("download-progress", onProgress);
+    autoUpdater.once("update-downloaded", onDownloaded);
+
     try {
       await autoUpdater.downloadUpdate();
-      setImmediate(() => autoUpdater.quitAndInstall(false, true));
-      return { status: "downloaded" };
+      sendUpdateStatus(event, {
+        status: "installing",
+        percent: 100,
+        message: "Instalando atualizacao. O ViaNexo sera reiniciado automaticamente."
+      });
+      setImmediate(() => autoUpdater.quitAndInstall(true, true));
+      return { status: "installing" };
     } catch (error) {
+      updateDownloadActive = false;
+      sendUpdateStatus(event, {
+        status: "error",
+        message: error instanceof Error ? error.message : "Nao foi possivel baixar a atualizacao."
+      });
       return {
         status: "error",
         message: error instanceof Error ? error.message : "Nao foi possivel baixar a atualizacao."
       };
+    } finally {
+      autoUpdater.off("download-progress", onProgress);
     }
   });
 }

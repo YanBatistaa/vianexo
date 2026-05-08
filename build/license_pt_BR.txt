@@ -1,0 +1,7 @@
+ViaNexo
+
+Aplicativo desktop para gestao operacional de fretamento, frota e roteiros.
+
+Este instalador configura o ViaNexo localmente no Windows. O banco de dados fica no computador do usuario e os backups devem ser mantidos em local seguro.
+
+Ao continuar, voce confirma que entende que os dados operacionais importados e cadastrados devem ser tratados conforme as politicas internas da empresa.
