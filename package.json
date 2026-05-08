@@ -18,7 +18,8 @@
     "postinstall": "prisma generate",
     "package": "npm run build && cross-env CSC_IDENTITY_AUTO_DISCOVERY=false electron-builder --win nsis --publish never",
     "test:smoke": "tsx scripts/smoke-test.ts",
-    "test:permissions": "tsx scripts/permissions-test.ts"
+    "test:permissions": "tsx scripts/permissions-test.ts",
+    "test:contracts": "tsx scripts/ipc-contract-test.ts"
   },
   "dependencies": {
     "@dnd-kit/core": "^6.3.1",

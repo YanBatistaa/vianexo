@@ -17,7 +17,26 @@ export function downloadCsv(fileName: string, rows: string[][]) {
   URL.revokeObjectURL(url);
 }
 
-export function routeSearchPayload(route: any) {
+type SearchableRoute = {
+  name?: string;
+  status?: string;
+  date?: string;
+  client?: { name?: string | null } | null;
+  vehicles?: Array<{
+    vehicle?: { label?: string | null; plate?: string | null } | null;
+    driver?: { name?: string | null } | null;
+    passengers?: Array<{
+      employee?: {
+        name?: string | null;
+        client?: { name?: string | null } | null;
+        address?: string | null;
+        destination?: string | null;
+      } | null;
+    }>;
+  }>;
+};
+
+export function routeSearchPayload(route: SearchableRoute) {
   return {
     name: route.name,
     client: route.client?.name,

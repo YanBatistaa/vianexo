@@ -32,6 +32,7 @@ import {
   restoreBackup
 } from "./repositories";
 import type { PermissionAction, PermissionModule } from "../shared/contracts";
+import { ipcChannels } from "../shared/ipc-contracts";
 import { hasPermission } from "../shared/permissions";
 import {
   clientSchema,
@@ -120,46 +121,46 @@ function protectedHandle<TInput, TOutput>(
 }
 
 export function registerIpcHandlers() {
-  handle("app:bootstrap", () => bootstrap());
-  handle("setup:admin", (input) => setupAdmin(setupAdminSchema.parse(input)));
-  handle("auth:login", async (input, event) => {
+  handle(ipcChannels.bootstrap, () => bootstrap());
+  handle(ipcChannels.setupAdmin, (input) => setupAdmin(setupAdminSchema.parse(input)));
+  handle(ipcChannels.login, async (input, event) => {
     const user = await login(loginSchema.parse(input));
     sessions.set(event.sender.id, user.id);
     return user;
   });
-  handle("auth:logout", (_input, event) => {
+  handle(ipcChannels.logout, (_input, event) => {
     sessions.delete(event.sender.id);
     return true;
   });
 
-  protectedHandle("clients:list", "clients", "view", () => listClients());
-  protectedHandle("clients:save", "clients", (input: any) => input?.id ? "edit" : "create", (input) => saveClient(clientSchema.parse(input)));
-  protectedHandle("clients:delete", "clients", "delete", (id: string) => deleteClient(id));
+  protectedHandle(ipcChannels.listClients, "clients", "view", () => listClients());
+  protectedHandle(ipcChannels.saveClient, "clients", (input: any) => input?.id ? "edit" : "create", (input) => saveClient(clientSchema.parse(input)));
+  protectedHandle(ipcChannels.deleteClient, "clients", "delete", (id: string) => deleteClient(id));
 
-  protectedHandle("drivers:list", "drivers", "view", () => listDrivers());
-  protectedHandle("drivers:save", "drivers", (input: any) => input?.id ? "edit" : "create", (input) => saveDriver(driverSchema.parse(input)));
-  protectedHandle("drivers:delete", "drivers", "delete", (id: string) => deleteDriver(id));
+  protectedHandle(ipcChannels.listDrivers, "drivers", "view", () => listDrivers());
+  protectedHandle(ipcChannels.saveDriver, "drivers", (input: any) => input?.id ? "edit" : "create", (input) => saveDriver(driverSchema.parse(input)));
+  protectedHandle(ipcChannels.deleteDriver, "drivers", "delete", (id: string) => deleteDriver(id));
 
-  protectedHandle("vehicles:list", "vehicles", "view", () => listVehicles());
-  protectedHandle("vehicles:save", "vehicles", (input: any) => input?.id ? "edit" : "create", (input) => saveVehicle(vehicleSchema.parse(input)));
-  protectedHandle("vehicles:delete", "vehicles", "delete", (id: string) => deleteVehicle(id));
+  protectedHandle(ipcChannels.listVehicles, "vehicles", "view", () => listVehicles());
+  protectedHandle(ipcChannels.saveVehicle, "vehicles", (input: any) => input?.id ? "edit" : "create", (input) => saveVehicle(vehicleSchema.parse(input)));
+  protectedHandle(ipcChannels.deleteVehicle, "vehicles", "delete", (id: string) => deleteVehicle(id));
 
-  protectedHandle("users:list", "users", "view", () => listUsers());
-  protectedHandle("users:save", "users", (input: any) => input?.id ? "edit" : "create", async (input, event) => saveUser(userSchema.parse(input), await getSessionUserId(event)));
-  protectedHandle("users:delete", "users", "delete", async (id: string, event) => deleteUser(id, await getSessionUserId(event)));
+  protectedHandle(ipcChannels.listUsers, "users", "view", () => listUsers());
+  protectedHandle(ipcChannels.saveUser, "users", (input: any) => input?.id ? "edit" : "create", async (input, event) => saveUser(userSchema.parse(input), await getSessionUserId(event)));
+  protectedHandle(ipcChannels.deleteUser, "users", "delete", async (id: string, event) => deleteUser(id, await getSessionUserId(event)));
 
-  protectedHandle("employees:list", "employees", "view", (clientId?: string) => listEmployees(clientId));
-  protectedHandle("employees:import", "imports", "create", (input) => importEmployees(importSchema.parse(input)));
-  protectedHandle("imports:templates:list", "imports", "view", (clientId: string) => listImportTemplates(clientId));
-  protectedHandle("imports:templates:save", "imports", "create", (input) => saveImportTemplate(importTemplateSchema.parse(input)));
+  protectedHandle(ipcChannels.listEmployees, "employees", "view", (clientId?: string) => listEmployees(clientId));
+  protectedHandle(ipcChannels.importEmployees, "imports", "create", (input) => importEmployees(importSchema.parse(input)));
+  protectedHandle(ipcChannels.listImportTemplates, "imports", "view", (clientId: string) => listImportTemplates(clientId));
+  protectedHandle(ipcChannels.saveImportTemplate, "imports", "create", (input) => saveImportTemplate(importTemplateSchema.parse(input)));
 
-  protectedHandle("routes:list", "routes", "view", () => listRoutes());
-  protectedHandle("routes:save", "routes", (input: any) => input?.id ? "edit" : "create", (input) => saveRoute(routeSchema.parse(input)));
-  protectedHandle("routes:save-batch", "routes", (input: any) => input?.routes?.some((route: any) => route.id) ? "edit" : "create", (input) => saveRouteBatch(routeBatchSchema.parse(input)));
+  protectedHandle(ipcChannels.listRoutes, "routes", "view", () => listRoutes());
+  protectedHandle(ipcChannels.saveRoute, "routes", (input: any) => input?.id ? "edit" : "create", (input) => saveRoute(routeSchema.parse(input)));
+  protectedHandle(ipcChannels.saveRouteBatch, "routes", (input: any) => input?.routes?.some((route: any) => route.id) ? "edit" : "create", (input) => saveRouteBatch(routeBatchSchema.parse(input)));
 
-  protectedHandle("backup:create", "settings", "create", async (_input, event) => createBackup(await getSessionUserId(event)));
-  protectedHandle("backup:settings", "settings", "view", () => getBackupSettings());
-  protectedHandle("backup:choose-directory", "settings", "edit", async () => {
+  protectedHandle(ipcChannels.createBackup, "settings", "create", async (_input, event) => createBackup(await getSessionUserId(event)));
+  protectedHandle(ipcChannels.getBackupSettings, "settings", "view", () => getBackupSettings());
+  protectedHandle(ipcChannels.chooseBackupDirectory, "settings", "edit", async () => {
     const result = await dialog.showOpenDialog({
       title: "Escolher pasta de backups do ViaNexo",
       properties: ["openDirectory", "createDirectory"]
@@ -169,7 +170,7 @@ export function registerIpcHandlers() {
     }
     return setBackupDirectory(result.filePaths[0]);
   });
-  protectedHandle("backup:restore", "settings", "edit", async (_input, event) => {
+  protectedHandle(ipcChannels.restoreBackup, "settings", "edit", async (_input, event) => {
     const result = await dialog.showOpenDialog({
       title: "Selecionar backup do ViaNexo",
       properties: ["openFile"],
@@ -180,8 +181,8 @@ export function registerIpcHandlers() {
     }
     return restoreBackup(result.filePaths[0], await getSessionUserId(event));
   });
-  protectedHandle("audit:list", "settings", "view", () => listAuditLogs());
-  handle("updates:check", async () => {
+  protectedHandle(ipcChannels.listAuditLogs, "settings", "view", () => listAuditLogs());
+  handle(ipcChannels.checkForUpdates, async () => {
     const currentVersion = app.getVersion();
     if (process.env.NODE_ENV === "development") {
       return {
@@ -214,7 +215,7 @@ export function registerIpcHandlers() {
     }
   });
 
-  handle("updates:download-and-install", async () => {
+  handle(ipcChannels.downloadAndInstallUpdate, async () => {
     try {
       await autoUpdater.downloadUpdate();
       setImmediate(() => autoUpdater.quitAndInstall(false, true));
