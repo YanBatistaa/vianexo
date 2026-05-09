@@ -212,6 +212,22 @@ export async function getUserAccessState(userId: string) {
   });
 }
 
+export async function getSessionUserByEmail(email: string) {
+  const user = await getPrisma().user.findUnique({
+    where: { email },
+    include: { permissions: true }
+  });
+  if (!user || user.status !== "ACTIVE") {
+    return null;
+  }
+  return {
+    id: user.id,
+    name: user.name,
+    email: user.email,
+    permissions: user.permissions
+  };
+}
+
 export async function listClients() {
   return getPrisma().client.findMany({
     orderBy: { createdAt: "desc" },

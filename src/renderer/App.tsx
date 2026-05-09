@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import {
   Archive,
@@ -142,9 +142,12 @@ function can(user: SessionUser, module: string, action: string) {
   return hasPermission(user.permissions, module as any, action as any);
 }
 
-function SetupScreen({ onDone }: { onDone: () => void }) {
+function SetupScreen({ onDone, onLogin }: { onDone: () => void; onLogin: (user: SessionUser) => void }) {
   const [form, setForm] = useState({ name: "", email: "", password: "" });
+  const [cloudForm, setCloudForm] = useState({ email: "", password: "" });
   const [error, setError] = useState("");
+  const [cloudError, setCloudError] = useState("");
+  const [restoringCloud, setRestoringCloud] = useState(false);
 
   async function submit(event: React.FormEvent) {
     event.preventDefault();
@@ -157,6 +160,24 @@ function SetupScreen({ onDone }: { onDone: () => void }) {
     }
   }
 
+  async function restoreCloud(event: React.FormEvent) {
+    event.preventDefault();
+    setCloudError("");
+    setRestoringCloud(true);
+    try {
+      await api.cloudLogin(cloudForm);
+      const result = await api.restoreFromCloud();
+      onDone();
+      if (result.user) {
+        onLogin(result.user);
+      }
+    } catch (err) {
+      setCloudError(err instanceof Error ? err.message : "Nao foi possivel restaurar os dados da nuvem.");
+    } finally {
+      setRestoringCloud(false);
+    }
+  }
+
   return (
     <main className="setup-shell">
       <section className="setup-panel">
@@ -164,12 +185,22 @@ function SetupScreen({ onDone }: { onDone: () => void }) {
         <h1>{appName}</h1>
         <p>Crie o primeiro administrador para liberar a operacao local.</p>
         <form onSubmit={submit} className="stack-form">
-          <Input label="Nome" value={form.name} onChange={(name) => setForm({ ...form, name })} />
-          <Input label="Email" type="email" value={form.email} onChange={(email) => setForm({ ...form, email })} />
-          <Input label="Senha" type="password" value={form.password} onChange={(password) => setForm({ ...form, password })} />
+          <Input label="Nome" value={form.name} onChange={(name) => setForm((prev) => ({ ...prev, name }))} />
+          <Input label="Email" type="email" value={form.email} onChange={(email) => setForm((prev) => ({ ...prev, email }))} />
+          <Input label="Senha" type="password" value={form.password} onChange={(password) => setForm((prev) => ({ ...prev, password }))} />
           {error && <p className="error-line">{error}</p>}
           <button className="primary-button" type="submit">
             <Check size={18} /> Criar administrador
+          </button>
+        </form>
+        <div className="setup-divider">ou</div>
+        <form onSubmit={restoreCloud} className="stack-form">
+          <p className="muted-copy">Restaure uma instalacao anterior usando a conta Supabase da empresa.</p>
+          <Input label="Email da nuvem" type="email" value={cloudForm.email} onChange={(email) => setCloudForm((prev) => ({ ...prev, email }))} />
+          <Input label="Senha da nuvem" type="password" value={cloudForm.password} onChange={(password) => setCloudForm((prev) => ({ ...prev, password }))} />
+          {cloudError && <p className="error-line">{cloudError}</p>}
+          <button className="secondary-button" type="submit" disabled={restoringCloud}>
+            <Download size={18} /> {restoringCloud ? "Restaurando..." : "Restaurar da nuvem"}
           </button>
         </form>
       </section>
@@ -202,8 +233,8 @@ function LoginScreen({ onLogin }: { onLogin: (user: SessionUser) => void }) {
         <h1>{appName}</h1>
         <p>Entre para acessar a central operacional.</p>
         <form onSubmit={submit} className="stack-form">
-          <Input label="Email" type="email" value={form.email} onChange={(email) => setForm({ ...form, email })} />
-          <Input label="Senha" type="password" value={form.password} onChange={(password) => setForm({ ...form, password })} />
+          <Input label="Email" type="email" value={form.email} onChange={(email) => setForm((prev) => ({ ...prev, email }))} />
+          <Input label="Senha" type="password" value={form.password} onChange={(password) => setForm((prev) => ({ ...prev, password }))} />
           {error && <p className="error-line">{error}</p>}
           <button className="primary-button" type="submit">
             <Check size={18} /> Entrar
@@ -447,12 +478,12 @@ function ClientsModule({ clients, refresh, user, notify }: any) {
         refresh();
         notify(editing ? "Cliente atualizado." : "Cliente cadastrado.");
       }}>
-        <Input label="Empresa" value={form.name} onChange={(name) => setForm({ ...form, name })} />
-        <Input label="Documento" value={form.document} onChange={(document) => setForm({ ...form, document })} required={false} />
-        <Input label="Contato" value={form.contact} onChange={(contact) => setForm({ ...form, contact })} required={false} />
-        <Input label="Telefone" value={form.phone} onChange={(phone) => setForm({ ...form, phone })} required={false} />
-        <Input label="Contrato" value={form.contractNumber} onChange={(contractNumber) => setForm({ ...form, contractNumber })} required={false} />
-        <Input label="Valor mensal" type="number" value={String(form.monthlyValue)} onChange={(monthlyValue) => setForm({ ...form, monthlyValue })} required={false} />
+        <Input label="Empresa" value={form.name} onChange={(name) => setForm((prev) => ({ ...prev, name }))} />
+        <Input label="Documento" value={form.document} onChange={(document) => setForm((prev) => ({ ...prev, document }))} required={false} />
+        <Input label="Contato" value={form.contact} onChange={(contact) => setForm((prev) => ({ ...prev, contact }))} required={false} />
+        <Input label="Telefone" value={form.phone} onChange={(phone) => setForm((prev) => ({ ...prev, phone }))} required={false} />
+        <Input label="Contrato" value={form.contractNumber} onChange={(contractNumber) => setForm((prev) => ({ ...prev, contractNumber }))} required={false} />
+        <Input label="Valor mensal" type="number" value={String(form.monthlyValue)} onChange={(monthlyValue) => setForm((prev) => ({ ...prev, monthlyValue }))} required={false} />
       </EditorPanel>}
       <SearchBar value={search} onChange={setSearch} placeholder="Filtrar por empresa, contato ou telefone" />
       <DataSection
@@ -474,7 +505,7 @@ function ClientsModule({ clients, refresh, user, notify }: any) {
 
 function ReportsModule({ clients, routes, user }: any) {
   const [clientId, setClientId] = useState("");
-  const [month, setMonth] = useState(new Date().toISOString().slice(0, 7));
+  const [month, setMonth] = useState(() => new Date().toISOString().slice(0, 7));
   const visibleRoutes = routes.filter((route: any) => {
     const routeMonth = new Date(route.date).toISOString().slice(0, 7);
     return routeMonth === month && (!clientId || route.clientId === clientId);
@@ -574,9 +605,9 @@ function DriversModule({ drivers, refresh, user, notify }: any) {
         refresh();
         notify(editing ? "Motorista atualizado." : "Motorista cadastrado.");
       }}>
-        <Input label="Nome" value={form.name} onChange={(name) => setForm({ ...form, name })} />
-        <Input label="Telefone" value={form.phone} onChange={(phone) => setForm({ ...form, phone })} required={false} />
-        <Input label="Documento" value={form.document} onChange={(document) => setForm({ ...form, document })} required={false} />
+        <Input label="Nome" value={form.name} onChange={(name) => setForm((prev) => ({ ...prev, name }))} />
+        <Input label="Telefone" value={form.phone} onChange={(phone) => setForm((prev) => ({ ...prev, phone }))} required={false} />
+        <Input label="Documento" value={form.document} onChange={(document) => setForm((prev) => ({ ...prev, document }))} required={false} />
       </EditorPanel>}
       <SearchBar value={search} onChange={setSearch} placeholder="Filtrar motoristas" />
       <DataSection
@@ -607,12 +638,12 @@ function VehiclesModule({ vehicles, drivers, refresh, user, notify }: any) {
         refresh();
         notify(editing ? "Veiculo atualizado." : "Veiculo cadastrado. Motorista novo, se informado, tambem foi salvo.");
       }}>
-        <Input label="Identificacao" value={form.label} onChange={(label) => setForm({ ...form, label })} />
-        <Input label="Placa" value={form.plate} onChange={(plate) => setForm({ ...form, plate })} required={false} />
-        <Input label="Capacidade" type="number" value={String(form.capacity)} onChange={(capacity) => setForm({ ...form, capacity: Number(capacity) })} />
+        <Input label="Identificacao" value={form.label} onChange={(label) => setForm((prev) => ({ ...prev, label }))} />
+        <Input label="Placa" value={form.plate} onChange={(plate) => setForm((prev) => ({ ...prev, plate }))} required={false} />
+        <Input label="Capacidade" type="number" value={String(form.capacity)} onChange={(capacity) => setForm((prev) => ({ ...prev, capacity: Number(capacity) }))} />
         <label>
           Status
-          <select value={form.status} onChange={(event) => setForm({ ...form, status: event.target.value })}>
+          <select value={form.status} onChange={(event) => setForm((prev) => ({ ...prev, status: event.target.value }))}>
             <option value="ACTIVE">Ativo</option>
             <option value="MAINTENANCE">Manutencao</option>
             <option value="INACTIVE">Inativo</option>
@@ -620,14 +651,14 @@ function VehiclesModule({ vehicles, drivers, refresh, user, notify }: any) {
         </label>
         <label>
           Motorista
-          <input list="drivers-list" value={form.driverName} onChange={(event) => setForm({ ...form, driverName: event.target.value })} placeholder="Digite ou escolha um motorista" />
+          <input list="drivers-list" value={form.driverName} onChange={(event) => setForm((prev) => ({ ...prev, driverName: event.target.value }))} placeholder="Digite ou escolha um motorista" />
           <datalist id="drivers-list">
             {drivers.map((driver: any) => <option key={driver.id} value={driver.name} />)}
           </datalist>
         </label>
         <label className="wide-field">
           Anotacoes
-          <textarea value={form.notes} onChange={(event) => setForm({ ...form, notes: event.target.value })} placeholder="Ex.: manutencao preventiva, documentos, observacoes da frota" />
+          <textarea value={form.notes} onChange={(event) => setForm((prev) => ({ ...prev, notes: event.target.value }))} placeholder="Ex.: manutencao preventiva, documentos, observacoes da frota" />
         </label>
       </EditorPanel>}
       <SearchBar value={search} onChange={setSearch} placeholder="Filtrar veiculos, placas ou motoristas" />
@@ -677,18 +708,18 @@ function EmployeesModule({ employees, clients, refresh, user, notify }: any) {
         }}>
           <label>
             Cliente
-            <select value={form.clientId} onChange={(event) => setForm({ ...form, clientId: event.target.value })} required>
+            <select value={form.clientId} onChange={(event) => setForm((prev) => ({ ...prev, clientId: event.target.value }))} required>
               <option value="">Selecione</option>
               {clients.map((client: any) => <option key={client.id} value={client.id}>{client.name}</option>)}
             </select>
           </label>
-          <Input label="Nome" value={form.name} onChange={(name) => setForm({ ...form, name })} />
-          <Input label="Endereco" value={form.address} onChange={(address) => setForm({ ...form, address })} required={false} />
-          <Input label="Destino" value={form.destination} onChange={(destination) => setForm({ ...form, destination })} required={false} />
-          <Input label="Telefone" value={form.phone} onChange={(phone) => setForm({ ...form, phone })} required={false} />
+          <Input label="Nome" value={form.name} onChange={(name) => setForm((prev) => ({ ...prev, name }))} />
+          <Input label="Endereco" value={form.address} onChange={(address) => setForm((prev) => ({ ...prev, address }))} required={false} />
+          <Input label="Destino" value={form.destination} onChange={(destination) => setForm((prev) => ({ ...prev, destination }))} required={false} />
+          <Input label="Telefone" value={form.phone} onChange={(phone) => setForm((prev) => ({ ...prev, phone }))} required={false} />
           <label className="wide-field">
             Anotacoes
-            <textarea value={form.notes} onChange={(event) => setForm({ ...form, notes: event.target.value })} placeholder="Observacoes do funcionario, restricoes, referencia de embarque" />
+            <textarea value={form.notes} onChange={(event) => setForm((prev) => ({ ...prev, notes: event.target.value }))} placeholder="Observacoes do funcionario, restricoes, referencia de embarque" />
           </label>
         </EditorPanel>
       )}
@@ -729,7 +760,7 @@ function EmployeesModule({ employees, clients, refresh, user, notify }: any) {
 function ImportsModule({ clients, employees, refresh, user, notify }: any) {
   const [clientId, setClientId] = useState("");
   const [rows, setRows] = useState<Record<string, unknown>[]>([]);
-  const [fileName, setFileName] = useState("modelo-manual.xlsx");
+  const fileName = useRef("modelo-manual.xlsx");
   const [map, setMap] = useState<Record<string, string>>({});
   const [templates, setTemplates] = useState<any[]>([]);
   const [templateName, setTemplateName] = useState("Padrao");
@@ -738,10 +769,11 @@ function ImportsModule({ clients, employees, refresh, user, notify }: any) {
   const validation = useMemo(() => {
     const normalizedName = (value: unknown) => String(value ?? "").trim().replace(/\s+/g, " ").toLowerCase();
     const existingNames = new Set(
-      employees
-        .filter((employee: any) => employee.clientId === clientId)
-        .map((employee: any) => normalizedName(employee.name))
-        .filter(Boolean)
+      employees.flatMap((employee: any) => {
+        if (employee.clientId !== clientId) return [];
+        const name = normalizedName(employee.name);
+        return name ? [name] : [];
+      })
     );
     const names = rows.map((row) => normalizedName(row[map.name]));
     const counts = names.reduce((acc, name) => {
@@ -778,9 +810,11 @@ function ImportsModule({ clients, employees, refresh, user, notify }: any) {
 
   async function handleFile(file?: File) {
     if (!file) return;
-    setFileName(file.name);
-    const buffer = await file.arrayBuffer();
-    const XLSX = await import("xlsx");
+    fileName.current = file.name;
+    const [buffer, XLSX] = await Promise.all([
+      file.arrayBuffer(),
+      import("xlsx")
+    ]);
     const workbook = XLSX.read(buffer);
     const sheet = workbook.Sheets[workbook.SheetNames[0]];
     const json = XLSX.utils.sheet_to_json<Record<string, unknown>>(sheet, { defval: "", raw: false });
@@ -801,21 +835,21 @@ function ImportsModule({ clients, employees, refresh, user, notify }: any) {
       ...validation.duplicateRows,
       ...(updateExisting ? [] : validation.existingRows)
     ]);
-    const payloadRows: EmployeeImportRow[] = rows.map((row, index) => {
-      if (blockedRows.has(index + 1)) return null;
+    const payloadRows: EmployeeImportRow[] = rows.flatMap((row, index) => {
+      if (blockedRows.has(index + 1)) return [];
       const used = new Set(Object.values(map));
       const extraData = Object.fromEntries(Object.entries(row).filter(([key]) => !used.has(key)));
-      return {
+      return [{
         name: String(row[map.name] ?? "").trim(),
         address: map.address ? String(row[map.address] ?? "").trim() : undefined,
         destination: map.destination ? String(row[map.destination] ?? "").trim() : undefined,
         phone: map.phone ? String(row[map.phone] ?? "").trim() : undefined,
         notes: map.notes ? String(row[map.notes] ?? "").trim() : undefined,
         extraData
-      };
-    }).filter(Boolean) as EmployeeImportRow[];
+      }];
+    });
 
-    await api.importEmployees({ clientId, fileName, columnMap: map, rows: payloadRows, rawPreview: rows.slice(0, 5), updateExisting });
+    await api.importEmployees({ clientId, fileName: fileName.current, columnMap: map, rows: payloadRows, rawPreview: rows.slice(0, 5), updateExisting });
     setRows([]);
     setMap({});
     refresh();
@@ -869,7 +903,7 @@ function ImportsModule({ clients, employees, refresh, user, notify }: any) {
           {["name", "address", "destination", "phone", "notes"].map((field) => (
             <label key={field}>
               {field}
-              <select value={map[field] ?? ""} onChange={(event) => setMap({ ...map, [field]: event.target.value })}>
+              <select value={map[field] ?? ""} onChange={(event) => setMap((prev) => ({ ...prev, [field]: event.target.value }))}>
                 <option value="">Ignorar</option>
                 {columns.map((column) => <option key={column} value={column}>{column}</option>)}
               </select>
@@ -1019,7 +1053,7 @@ function RouteDropCard({ card, vehicle, drivers, employees, over, updateCard, re
 
 function RoutesModule({ clients, employees, vehicles, drivers, routes, refresh, user, notify }: any) {
   const [clientId, setClientId] = useState("");
-  const [date, setDate] = useState(new Date().toISOString().slice(0, 10));
+  const [date, setDate] = useState(() => new Date().toISOString().slice(0, 10));
   const [cards, setCards] = useState<RouteCard[]>([]);
   const [employeeSearch, setEmployeeSearch] = useState("");
   const [historySearch, setHistorySearch] = useState("");
@@ -1034,6 +1068,7 @@ function RoutesModule({ clients, employees, vehicles, drivers, routes, refresh, 
   const availableEmployees = filteredEmployees.filter((employee: any) => !selectedEmployeeIds.has(employee.id));
   const activeEmployee = employees.find((employee: any) => employee.id === activeEmployeeId);
   const searchedRoutes = routes.filter((route: any) => matchesSearch(routeSearchPayload(route), historySearch));
+  const visibleClients = clients.filter((client: any) => client.name !== "Rotas multiclientes");
 
   useEffect(() => {
     if (!routeReport) return;
@@ -1043,7 +1078,7 @@ function RoutesModule({ clients, employees, vehicles, drivers, routes, refresh, 
 
   function addVehicleCard(vehicle: any) {
     const count = cards.filter((card) => card.vehicleId === vehicle.id).length + 1;
-    setCards([...cards, {
+    setCards((prev) => [...prev, {
       instanceId: `${vehicle.id}-${Date.now()}-${count}`,
       vehicleId: vehicle.id,
       name: `${vehicle.label} - Rota ${count}`,
@@ -1054,7 +1089,7 @@ function RoutesModule({ clients, employees, vehicles, drivers, routes, refresh, 
   }
 
   function updateCard(instanceId: string, updater: (card: RouteCard) => RouteCard) {
-    setCards(cards.map((card) => card.instanceId === instanceId ? updater(card) : card));
+    setCards((prev) => prev.map((card) => card.instanceId === instanceId ? updater(card) : card));
   }
 
   function removeEmployee(instanceId: string, employeeId: string) {
@@ -1076,7 +1111,7 @@ function RoutesModule({ clients, employees, vehicles, drivers, routes, refresh, 
   }
 
   function duplicateCard(card: RouteCard) {
-    setCards([...cards, {
+    setCards((prev) => [...prev, {
       ...card,
       instanceId: `${card.vehicleId}-${Date.now()}-copy`,
       routeId: undefined,
@@ -1251,10 +1286,10 @@ function RoutesModule({ clients, employees, vehicles, drivers, routes, refresh, 
             Cliente
             <select value={clientId} onChange={(event) => {
               setClientId(event.target.value);
-              setCards(cards.map((card) => ({ ...card, employeeIds: [] })));
+              setCards((prev) => prev.map((card) => ({ ...card, employeeIds: [] })));
             }}>
               <option value="">Todos</option>
-              {clients.filter((client: any) => client.name !== "Rotas multiclientes").map((client: any) => <option key={client.id} value={client.id}>{client.name}</option>)}
+              {visibleClients.map((client: any) => <option key={client.id} value={client.id}>{client.name}</option>)}
             </select>
           </label>
           <h3>Adicionar veiculo</h3>
@@ -1313,7 +1348,7 @@ function RoutesModule({ clients, employees, vehicles, drivers, routes, refresh, 
                   employees={employees}
                   over={over}
                   updateCard={updateCard}
-                  removeCard={(instanceId) => setCards(cards.filter((item) => item.instanceId !== instanceId))}
+                  removeCard={(instanceId) => setCards((prev) => prev.filter((item) => item.instanceId !== instanceId))}
                   duplicateCard={duplicateCard}
                   moveEmployee={moveEmployee}
                   removeEmployee={removeEmployee}
@@ -1337,7 +1372,7 @@ function RoutesModule({ clients, employees, vehicles, drivers, routes, refresh, 
             new Date(route.date).toLocaleDateString("pt-BR"),
             route.status,
             `v${route.version ?? 1}`,
-            route.vehicles?.map((item: any) => item.vehicle?.label).filter(Boolean).join(", ") || "-",
+            route.vehicles?.flatMap((item: any) => item.vehicle?.label ? [item.vehicle.label] : []).join(", ") || "-",
             new Date(route.updatedAt ?? route.createdAt).toLocaleString("pt-BR"),
             <div className="row-actions" key={route.id}>
               {can(user, "routes", "edit") && <button className="icon-button" title="Editar rota" onClick={() => loadRoute(route)}><Edit3 size={16} /></button>}
@@ -1422,12 +1457,12 @@ function UsersModule({ users, refresh, user, notify }: any) {
         refresh();
         notify(editing ? "Usuario atualizado." : "Usuario cadastrado.");
       }}>
-        <Input label="Nome" value={form.name} onChange={(name) => setForm({ ...form, name })} />
-        <Input label="Email" type="email" value={form.email} onChange={(email) => setForm({ ...form, email })} />
-        <Input label={editing ? "Nova senha" : "Senha inicial"} type="password" value={form.password} onChange={(password) => setForm({ ...form, password })} required={!editing} />
+        <Input label="Nome" value={form.name} onChange={(name) => setForm((prev) => ({ ...prev, name }))} />
+        <Input label="Email" type="email" value={form.email} onChange={(email) => setForm((prev) => ({ ...prev, email }))} />
+        <Input label={editing ? "Nova senha" : "Senha inicial"} type="password" value={form.password} onChange={(password) => setForm((prev) => ({ ...prev, password }))} required={!editing} />
         <label>
           Status
-          <select value={form.status} onChange={(event) => setForm({ ...form, status: event.target.value })}>
+          <select value={form.status} onChange={(event) => setForm((prev) => ({ ...prev, status: event.target.value }))}>
             <option value="ACTIVE">Ativo</option>
             <option value="INACTIVE">Inativo</option>
           </select>
@@ -1436,7 +1471,7 @@ function UsersModule({ users, refresh, user, notify }: any) {
           <strong>{allowedCount}/32 permissoes</strong>
           <span>{editing ? "Ajuste fino do perfil" : "Escolha um preset ou marque modulo por modulo"}</span>
         </div>
-        <PermissionEditor value={form.permissions} onChange={(permissions) => setForm({ ...form, permissions })} />
+        <PermissionEditor value={form.permissions} onChange={(permissions) => setForm((prev) => ({ ...prev, permissions }))} />
       </EditorPanel>}
       <SearchBar value={search} onChange={setSearch} placeholder="Filtrar usuarios" />
       <DataSection
@@ -1519,11 +1554,16 @@ function SettingsModule({ user, showUpdate, onLogout, refresh, notify, theme, se
   const [backupSettings, setBackupSettings] = useState<any>(null);
   const [auditLogs, setAuditLogs] = useState<any[]>([]);
   const [syncExport, setSyncExport] = useState<any>(null);
+  const [cloudStatus, setCloudStatus] = useState<any>(null);
+  const [cloudForm, setCloudForm] = useState({ email: user.email ?? "", password: "" });
+  const [cloudBusy, setCloudBusy] = useState(false);
+  const [cloudResult, setCloudResult] = useState<any>(null);
 
   useEffect(() => {
     if (!can(user, "settings", "view")) return;
     api.getBackupSettings().then(setBackupSettings);
     api.listAuditLogs().then(setAuditLogs);
+    api.getCloudStatus().then(setCloudStatus);
   }, [user]);
 
   async function checkUpdates() {
@@ -1576,6 +1616,63 @@ function SettingsModule({ user, showUpdate, onLogout, refresh, notify, theme, se
     setSyncExport(result);
     setAuditLogs(await api.listAuditLogs());
     notify("Pacote de sincronizacao exportado.");
+  }
+
+  async function connectCloud(event: React.FormEvent) {
+    event.preventDefault();
+    setCloudBusy(true);
+    try {
+      const status = await api.cloudLogin(cloudForm);
+      setCloudStatus(status);
+      setCloudForm((prev) => ({ ...prev, password: "" }));
+      notify("Conta da nuvem conectada.");
+    } catch (error) {
+      notify(error instanceof Error ? error.message : "Nao foi possivel conectar a nuvem.", "error");
+    } finally {
+      setCloudBusy(false);
+    }
+  }
+
+  async function syncCloud() {
+    setCloudBusy(true);
+    try {
+      const result = await api.syncCloudNow();
+      setCloudResult(result);
+      setCloudStatus(await api.getCloudStatus());
+      refresh();
+      notify("Dados sincronizados com a nuvem.");
+    } catch (error) {
+      notify(error instanceof Error ? error.message : "Nao foi possivel sincronizar.", "error");
+    } finally {
+      setCloudBusy(false);
+    }
+  }
+
+  async function restoreCloud() {
+    setCloudBusy(true);
+    try {
+      const result = await api.restoreFromCloud();
+      setCloudResult(result);
+      setCloudStatus(await api.getCloudStatus());
+      refresh();
+      notify("Dados restaurados da nuvem.");
+    } catch (error) {
+      notify(error instanceof Error ? error.message : "Nao foi possivel restaurar da nuvem.", "error");
+    } finally {
+      setCloudBusy(false);
+    }
+  }
+
+  async function disconnectCloud() {
+    setCloudBusy(true);
+    try {
+      await api.cloudLogout();
+      setCloudStatus(await api.getCloudStatus());
+      setCloudResult(null);
+      notify("Conta da nuvem desconectada.");
+    } finally {
+      setCloudBusy(false);
+    }
   }
 
   return (
@@ -1643,8 +1740,37 @@ function SettingsModule({ user, showUpdate, onLogout, refresh, notify, theme, se
           )}
         </div>
         <div className="panel settings-sync-panel">
-          <h3>Nuvem e portal</h3>
-          <p className="muted-copy">Exporte um pacote JSON versionado para alimentar sincronizacao futura ou um portal de cliente.</p>
+          <h3>Sincronizacao em nuvem</h3>
+          <p className="muted-copy">
+            {cloudStatus?.connected ? `Conectado como ${cloudStatus.email}.` : cloudStatus?.message ?? "Conecte a conta Supabase da empresa para sincronizar e restaurar dados."}
+          </p>
+          {!cloudStatus?.connected ? (
+            <form className="stack-form compact-form" onSubmit={connectCloud}>
+              <Input label="Email Supabase" type="email" value={cloudForm.email} onChange={(email) => setCloudForm((prev) => ({ ...prev, email }))} />
+              <Input label="Senha Supabase" type="password" value={cloudForm.password} onChange={(password) => setCloudForm((prev) => ({ ...prev, password }))} />
+              <button className="primary-button" type="submit" disabled={cloudBusy || !cloudStatus?.configured}>
+                <Check size={17} /> {cloudBusy ? "Conectando..." : "Conectar nuvem"}
+              </button>
+            </form>
+          ) : (
+            <div className="button-row">
+              <button className="primary-button" onClick={syncCloud} disabled={cloudBusy || !can(user, "settings", "edit")}>
+                <Upload size={17} /> {cloudBusy ? "Sincronizando..." : "Sincronizar agora"}
+              </button>
+              <button className="secondary-button" onClick={restoreCloud} disabled={cloudBusy || !can(user, "settings", "edit")}>
+                <Download size={17} /> Restaurar da nuvem
+              </button>
+              <button className="secondary-button danger" onClick={disconnectCloud} disabled={cloudBusy}>
+                <LogOut size={17} /> Desconectar
+              </button>
+            </div>
+          )}
+          {cloudStatus?.lastSyncAt && <p className="success-line">Ultima sincronizacao: {new Date(cloudStatus.lastSyncAt).toLocaleString("pt-BR")}.</p>}
+          {cloudResult && <p className="success-line">{cloudResult.pushedRecords} enviados, {cloudResult.pulledRecords} baixados, {cloudResult.restoredRecords} restaurados.</p>}
+        </div>
+        <div className="panel settings-sync-panel">
+          <h3>Pacote local</h3>
+          <p className="muted-copy">Exporte um pacote JSON versionado para auditoria externa ou integracoes futuras.</p>
           <button className="secondary-button" onClick={exportSyncPackage} disabled={!can(user, "settings", "view")}>
             <Download size={17} /> Exportar pacote
           </button>
@@ -1805,9 +1931,10 @@ function DataTable({ columns, rows }: { columns: string[]; rows: React.ReactNode
         <tbody>
           {rows.length === 0 ? (
             <tr><td colSpan={Math.max(columns.length, 1)}>Nenhum registro encontrado.</td></tr>
-          ) : rows.map((row, index) => (
-            <tr key={index}>{row.map((cell, cellIndex) => <td key={cellIndex}>{cell}</td>)}</tr>
-          ))}
+          ) : rows.map((row) => {
+            const rowKey = row.map((cell) => typeof cell === "string" || typeof cell === "number" ? String(cell) : "").join("|");
+            return <tr key={rowKey}>{row.map((cell, cellIndex) => <td key={cellIndex}>{cell}</td>)}</tr>;
+          })}
         </tbody>
       </table>
     </div>
@@ -1815,9 +1942,13 @@ function DataTable({ columns, rows }: { columns: string[]; rows: React.ReactNode
 }
 
 function App() {
-  const [needsSetup, setNeedsSetup] = useState<boolean | null>(null);
-  const [user, setUser] = useState<SessionUser | null>(null);
-  const [bootError, setBootError] = useState("");
+  const [boot, setBoot] = useState<{
+    needsSetup: boolean | null;
+    user: SessionUser | null;
+    error: string;
+  }>({ needsSetup: null, user: null, error: "" });
+  const setUser = (user: SessionUser | null) => setBoot((prev) => ({ ...prev, user }));
+  const setBootError = (error: string) => setBoot((prev) => ({ ...prev, error }));
 
   useEffect(() => {
     try {
@@ -1825,17 +1956,18 @@ function App() {
         throw new Error("Preload nao carregou a API do ViaNexo.");
       }
       api.bootstrap().then(async (state) => {
-        setNeedsSetup(state.needsSetup);
+        let restoredUser: SessionUser | null = null;
         if (!state.needsSetup) {
           const token = localStorage.getItem(sessionStorageKey);
           if (token) {
             try {
-              setUser(await api.restoreSession(token));
+              restoredUser = await api.restoreSession(token);
             } catch {
               localStorage.removeItem(sessionStorageKey);
             }
           }
         }
+        setBoot({ needsSetup: state.needsSetup, user: restoredUser, error: "" });
       }).catch((error) => {
         setBootError(error instanceof Error ? error.message : "Nao foi possivel iniciar o ViaNexo.");
       });
@@ -1844,32 +1976,32 @@ function App() {
     }
   }, []);
 
-  if (bootError) {
+  if (boot.error) {
     return (
       <main className="setup-shell">
         <section className="setup-panel">
           <BrandMark />
           <h1>{appName}</h1>
-          <p className="error-line">Erro ao iniciar: {bootError}</p>
+          <p className="error-line">Erro ao iniciar: {boot.error}</p>
           <p className="muted-copy">Feche e abra o app novamente. Se persistir, envie o arquivo de log em AppData/Roaming/ViaNexo/logs/main.log.</p>
         </section>
       </main>
     );
   }
 
-  if (needsSetup === null) {
+  if (boot.needsSetup === null) {
     return <div className="boot-screen">Carregando {appName}...</div>;
   }
 
-  if (needsSetup) {
-    return <SetupScreen onDone={() => setNeedsSetup(false)} />;
+  if (boot.needsSetup) {
+    return <SetupScreen onDone={() => setBoot((prev) => ({ ...prev, needsSetup: false }))} onLogin={setUser} />;
   }
 
-  if (!user) {
+  if (!boot.user) {
     return <LoginScreen onLogin={setUser} />;
   }
 
-  return <Shell user={user} onLogout={async () => {
+  return <Shell user={boot.user} onLogout={async () => {
     const token = localStorage.getItem(sessionStorageKey) ?? undefined;
     await api.logout(token);
     localStorage.removeItem(sessionStorageKey);

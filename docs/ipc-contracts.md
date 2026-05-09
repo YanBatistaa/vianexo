@@ -9,6 +9,11 @@ Fonte de verdade: `src/shared/ipc-contracts.ts`.
 | `login` | `auth:login` | publica | `LoginInput` | `SessionUser` |
 | `restoreSession` | `auth:restore` | publica com token | `sessionToken` | `SessionUser` |
 | `logout` | `auth:logout` | sessao | `sessionToken?` | `boolean` |
+| `cloudLogin` | `cloud:login` | publica | `CloudLoginInput` | `CloudStatus` |
+| `cloudLogout` | `cloud:logout` | publica | `void` | `boolean` |
+| `getCloudStatus` | `cloud:status` | publica | `void` | `CloudStatus` |
+| `syncCloudNow` | `cloud:sync` | `settings.edit` | `void` | `CloudSyncResult` |
+| `restoreFromCloud` | `cloud:restore` | publica com login Supabase | `void` | `CloudSyncResult & { user? }` |
 | `listClients` | `clients:list` | `clients.view` | `void` | `Client[]` |
 | `saveClient` | `clients:save` | `clients.create/edit` | `ClientInput & { id? }` | `Client` |
 | `deleteClient` | `clients:delete` | `clients.delete` | `id` | `boolean` |

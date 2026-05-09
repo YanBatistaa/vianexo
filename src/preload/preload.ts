@@ -1,6 +1,7 @@
 import { contextBridge, ipcRenderer } from "electron";
 import type {
   ClientInput,
+  CloudLoginInput,
   DesktopApi,
   DriverInput,
   EmployeeInput,
@@ -23,6 +24,11 @@ const api: DesktopApi = {
   login: (input: LoginInput) => invoke(ipcChannels.login, input),
   restoreSession: (token: string) => invoke(ipcChannels.restoreSession, token),
   logout: (token?: string) => invoke(ipcChannels.logout, token),
+  cloudLogin: (input: CloudLoginInput) => invoke(ipcChannels.cloudLogin, input),
+  cloudLogout: () => invoke(ipcChannels.cloudLogout),
+  getCloudStatus: () => invoke(ipcChannels.getCloudStatus),
+  syncCloudNow: () => invoke(ipcChannels.syncCloudNow),
+  restoreFromCloud: () => invoke(ipcChannels.restoreFromCloud),
   listClients: () => invoke(ipcChannels.listClients),
   saveClient: (input: ClientInput & { id?: string }) => invoke(ipcChannels.saveClient, input),
   deleteClient: (id: string) => invoke(ipcChannels.deleteClient, id),

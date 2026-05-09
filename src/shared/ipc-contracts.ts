@@ -36,6 +36,32 @@ export const ipcContracts: Record<keyof DesktopApi, IpcContract> = {
     payload: "sessionToken",
     returns: "SessionUser"
   },
+  cloudLogin: {
+    channel: "cloud:login",
+    payload: "CloudLoginInput",
+    returns: "CloudStatus"
+  },
+  cloudLogout: {
+    channel: "cloud:logout",
+    payload: "void",
+    returns: "boolean"
+  },
+  getCloudStatus: {
+    channel: "cloud:status",
+    payload: "void",
+    returns: "CloudStatus"
+  },
+  syncCloudNow: {
+    channel: "cloud:sync",
+    permission: { module: "settings", action: "edit" },
+    payload: "void",
+    returns: "CloudSyncResult"
+  },
+  restoreFromCloud: {
+    channel: "cloud:restore",
+    payload: "void",
+    returns: "CloudSyncResult & { user? }"
+  },
   listClients: {
     channel: "clients:list",
     permission: { module: "clients", action: "view" },

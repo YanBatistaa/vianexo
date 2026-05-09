@@ -1,0 +1,4 @@
+interface:
+  display_name: "React Doctor"
+  short_description: "Run React Doctor diagnostics and apply React code quality fixes."
+  default_prompt: "Run React Doctor on this project, summarize findings, and fix actionable issues."

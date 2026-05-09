@@ -28,6 +28,25 @@ export type LoginInput = {
   password: string;
 };
 
+export type CloudLoginInput = LoginInput;
+
+export type CloudStatus = {
+  configured: boolean;
+  connected: boolean;
+  email?: string;
+  organizationId?: string;
+  lastSyncAt?: string;
+  message?: string;
+};
+
+export type CloudSyncResult = {
+  pushedRecords: number;
+  pulledRecords: number;
+  restoredRecords: number;
+  organizationId: string;
+  syncedAt: string;
+};
+
 export type SessionUser = {
   id: string;
   name: string;
@@ -222,6 +241,11 @@ export type DesktopApi = {
   login(input: LoginInput): ApiResult<SessionUser>;
   restoreSession(token: string): ApiResult<SessionUser>;
   logout(token?: string): ApiResult<boolean>;
+  cloudLogin(input: CloudLoginInput): ApiResult<CloudStatus>;
+  cloudLogout(): ApiResult<boolean>;
+  getCloudStatus(): ApiResult<CloudStatus>;
+  syncCloudNow(): ApiResult<CloudSyncResult>;
+  restoreFromCloud(): ApiResult<CloudSyncResult & { user?: SessionUser }>;
   listClients(): ApiResult<any[]>;
   saveClient(input: ClientInput & { id?: string }): ApiResult<any>;
   deleteClient(id: string): ApiResult<boolean>;

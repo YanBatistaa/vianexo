@@ -1,0 +1,19 @@
+{
+  "ignore": {
+    "rules": [
+      "files",
+      "knip/files",
+      "types",
+      "knip/types",
+      "exports",
+      "knip/exports",
+      "rendering-hydration-mismatch-time",
+      "react-doctor/rendering-hydration-mismatch-time",
+      "no-prevent-default",
+      "react-doctor/no-prevent-default"
+    ],
+    "files": [
+      "scripts/**"
+    ]
+  }
+}

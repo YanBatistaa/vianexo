@@ -8,6 +8,7 @@ import {
   deleteDriver,
   deleteUser,
   deleteVehicle,
+  getSessionUserByEmail,
   getUserAccessState,
   getBackupSettings,
   exportDataPackage,
@@ -41,6 +42,7 @@ import { ipcChannels } from "../shared/ipc-contracts";
 import { hasPermission } from "../shared/permissions";
 import {
   clientSchema,
+  cloudLoginSchema,
   driverSchema,
   employeeSchema,
   importSchema,
@@ -52,6 +54,7 @@ import {
   userSchema,
   vehicleSchema
 } from "./validation";
+import { cloudLogin, cloudLogout, getCloudStatus, restoreFromCloud, syncCloudNow } from "./supabase";
 
 autoUpdater.autoDownload = false;
 autoUpdater.autoInstallOnAppQuit = false;
@@ -151,6 +154,18 @@ export function registerIpcHandlers() {
     await revokeSession(token);
     return true;
   });
+  handle(ipcChannels.cloudLogin, (input) => cloudLogin(cloudLoginSchema.parse(input)));
+  handle(ipcChannels.cloudLogout, () => cloudLogout());
+  handle(ipcChannels.getCloudStatus, () => getCloudStatus());
+  handle(ipcChannels.restoreFromCloud, async (_input, event) => {
+    const result = await restoreFromCloud();
+    const user = await getSessionUserByEmail(result.email);
+    if (user) {
+      sessions.set(event.sender.id, user.id);
+    }
+    return { ...result, user: user ?? undefined };
+  });
+  protectedHandle(ipcChannels.syncCloudNow, "settings", "edit", () => syncCloudNow());
 
   protectedHandle(ipcChannels.listClients, "clients", "view", () => listClients());
   protectedHandle(ipcChannels.saveClient, "clients", (input: any) => input?.id ? "edit" : "create", (input) => saveClient(clientSchema.parse(input)));

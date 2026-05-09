@@ -11,6 +11,8 @@ export const loginSchema = z.object({
   password: z.string().min(1)
 });
 
+export const cloudLoginSchema = loginSchema;
+
 export const clientSchema = z.object({
   id: z.string().optional(),
   name: z.string().min(2),
